@@ -1,0 +1,18 @@
+# Ignore dataset
+developer/
+
+# Ignore generated indexes
+index/partial_indexes/
+storage/final_index/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual envs
+.venv/
+env/
+
+# OS junk
+Thumbs.db
+.DS_Store
