@@ -1,17 +1,11 @@
-# Ignore dataset
 developer/
-
-# Ignore generated index files
 index/
-
-# Python cache
 __pycache__/
 *.pyc
 
-# Virtual environments
 .venv/
 env/
+.idea/
 
-# OS junk
 Thumbs.db
 .DS_Store
