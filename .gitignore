@@ -1,15 +1,14 @@
 # Ignore dataset
 developer/
 
-# Ignore generated indexes
-index/partial_indexes/
-storage/final_index/
+# Ignore generated index files
+index/
 
 # Python cache
 __pycache__/
 *.pyc
 
-# Virtual envs
+# Virtual environments
 .venv/
 env/
 
