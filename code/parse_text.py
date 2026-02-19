@@ -20,4 +20,3 @@ def extract_text(html_text):
 
     important_text = " ".join(important_text_list)
     return normal_text, important_text
-
