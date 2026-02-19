@@ -14,6 +14,17 @@ class IndexNode:
     doc_ids: dict[int, list[int]]
     important: IMPORTANCE
 
+    def merge(self, other: 'IndexNode'):
+        self.count += other.count
+        for doc_id, positions in other.doc_ids.items():
+            if doc_id not in self.doc_ids:
+                self.doc_ids[doc_id] = positions
+            else:
+                for position in positions:
+                    bisect.insort(self.doc_ids[doc_id], position)
+        if other.important.value > self.important.value:
+            self.important = other.important
+
 class Index:
     def __init__(self):
         self.nodes = []
@@ -32,7 +43,7 @@ class Index:
         node.count += 1
         if doc_id not in node.doc_ids:
             node.doc_ids[doc_id] = []
-        node.doc_ids[doc_id].append(position)
+        bisect.insort(node.doc_ids[doc_id], position)
     
     def get_node(self, token: str):
         return self.token_to_node.get(token, None)
@@ -42,6 +53,8 @@ class Index:
     
     def merge(self, other):
         for node in other.nodes:
-            for doc_id, positions in node.doc_ids.items():
-                for position in positions:
-                    self.add_token(node.token, doc_id, position, node.important)
+            if node.token not in self.token_to_node:
+                self.token_to_node[node.token] = node
+                bisect.insort(self.nodes, node, key=lambda x: x.token)
+            else:
+                self.get_node(node.token).merge(node)
