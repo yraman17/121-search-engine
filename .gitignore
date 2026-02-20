@@ -1,5 +1,6 @@
 developer/
 index/
+failed run index/
 __pycache__/
 *.pyc
 

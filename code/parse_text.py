@@ -1,4 +1,11 @@
-from bs4 import BeautifulSoup
+from unicodedata import category
+import warnings
+
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+
+# suppress BeautifulSoup XML and URL warnings
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
 
 def extract_text(html_text: str) -> tuple[str, str]:
