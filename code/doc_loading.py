@@ -1,9 +1,9 @@
 import os
 import json
 
-DATASET_DIR = os.path.join("..", "developer")
-PARTIAL_INDEX_DIR = os.path.join("..", "index", "partials")
-FINAL_INDEX_DIR = os.path.join("..", "index", "final")
+DATASET_DIR = os.path.join("..", "Assignment 3", "121-search-engine", "developer")
+PARTIAL_INDEX_DIR = os.path.join("..", "Assignment 3", "121-search-engine", "index", "partials")
+FINAL_INDEX_DIR = os.path.join("..", "Assignment 3", "121-search-engine", "index", "final")
 
 def all_jsons_iter(dataset_dir):
     '''Finds every json in the dataset folder'''
