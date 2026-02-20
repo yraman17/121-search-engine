@@ -42,6 +42,35 @@ def build_index(
     print(f"[2/5] Processing documents and building index...") # prints for visiblity
     for _file_id, url, html in doc_loading.iter_documents(dataset_dir):
         file_count += 1
+
+        # progress printing (runs for every file, before any continue)
+        if file_count % 1000 == 0:
+            print(f"      Processed {file_count} files, indexed {next_doc_id} documents "
+                  f"({exact_dups_removed} exact, {near_dups_removed} near duplicates skipped)... "
+                  f"(current index has {len(current_index)} unique tokens)")
+        elif file_count <= 500 and file_count % 100 == 0:
+            print(f"      Processed {file_count} files, indexed {next_doc_id} documents "
+                  f"(current index has {len(current_index)} unique tokens)")
+
+        # partial index offload (runs for every file, keyed on file_count)
+        if file_count % BATCH_SIZE == 0 and current_index:
+            part_path = os.path.join(partial_dir, f"partial_{len(partial_paths)}.json")
+
+            total_postings = sum(len(entry.postings) for entry in current_index.entries)
+            print(f"      Writing partial index #{len(partial_paths)}:")
+            print(f"         - {len(current_index)} unique tokens")
+            print(f"         - {total_postings} total postings")
+            print(f"         - {next_doc_id} documents indexed so far")
+            print(f"         - Saving to: {part_path}")
+
+            write_partial_index(current_index, part_path)
+
+            file_size_kb = os.path.getsize(part_path) / 1024.0
+            print(f"         - Partial index size: {file_size_kb:.2f} KB\n")
+
+            partial_paths.append(part_path)
+            current_index = Index()
+
         if html is None:
             continue
 
@@ -65,12 +94,8 @@ def build_index(
 
         doc_id_to_url[doc_id] = url
 
-        # prints first few documents being processed
         if next_doc_id <= 3:
             print(f"      Processing document #{next_doc_id}: {url[:80]}{'...' if len(url) > 80 else ''}")
-
-        # prints tokenization stats for first few documents
-        if next_doc_id <= 3:
             total_normal_tokens = sum(counts_normal.values())
             total_important_tokens = sum(counts_important.values())
             unique_normal = len(counts_normal)
@@ -85,38 +110,6 @@ def build_index(
             current_index.add_token(token, doc_id, tf, Importance.NORMAL)
         for token, tf in counts_important.items():
             current_index.add_token(token, doc_id, tf, Importance.BOLD_OR_HEADING)
-
-        # prints progress indicator every 1000 files (more frequent)
-        if file_count % 1000 == 0 and file_count > 0:
-            print(f"      Processed {file_count} files, indexed {next_doc_id} documents "
-                  f"({exact_dups_removed} exact, {near_dups_removed} near duplicates skipped)... "
-                  f"(current index has {len(current_index)} unique tokens)")
-        
-        # prints progress indicator every 100 docs for first 500 to see early progress
-        elif file_count <= 500 and file_count % 100 == 0:
-            print(f"      Processed {file_count} files, indexed {next_doc_id} documents "
-                  f"(current index has {len(current_index)} unique tokens)")
-
-        # offload to partial index every BATCH_SIZE documents (by indexed count)
-        if next_doc_id % BATCH_SIZE == 0 and current_index:
-            part_path = os.path.join(partial_dir, f"partial_{len(partial_paths)}.json")
-
-            # prints partial index stats
-            total_postings = sum(len(entry.postings) for entry in current_index.entries)
-            print(f"      Writing partial index #{len(partial_paths)}:")
-            print(f"         - {len(current_index)} unique tokens")
-            print(f"         - {total_postings} total postings")
-            print(f"         - {next_doc_id} documents indexed so far")
-            print(f"         - Saving to: {part_path}")
-
-            write_partial_index(current_index, part_path)
-
-            # prints partial index size
-            file_size_kb = os.path.getsize(part_path) / 1024.0
-            print(f"         - Partial index size: {file_size_kb:.2f} KB\n")
-
-            partial_paths.append(part_path)
-            current_index = Index()
 
     # write remaining in-memory index as last partial if non-empty
     if current_index:
