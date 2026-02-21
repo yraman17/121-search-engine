@@ -3,13 +3,14 @@ import os
 import doc_loading
 from parse_text import extract_text
 from tokenizer import tokenize
-from index import Index, Importance
-from index_io import (
+from index import (
+    Index,
+    Importance,
     write_partial_index,
     merge_partial_indexes,
     write_doc_mapping,
 )
-from duplicate_detection import DuplicateDetector
+from duplicate_simhash import DuplicateDetector
 
 BATCH_SIZE = 10000
 
