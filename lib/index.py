@@ -1,8 +1,9 @@
 import bisect
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import IntEnum
+
 
 class Importance(IntEnum):
     # higher is more important
@@ -10,11 +11,12 @@ class Importance(IntEnum):
     BOLD_OR_HEADING = 1
     TITLE = 2
 
+
 @dataclass
 class Posting:
     # one posting: token's occurrence in a single document
     doc_id: int
-    tf: int # term frequency
+    tf: int  # term frequency
     importance: Importance = Importance.NORMAL
 
     # merge two postings for the same doc_id
@@ -25,13 +27,18 @@ class Posting:
         if other.importance > self.importance:
             self.importance = other.importance
 
+
 @dataclass
 class IndexEntry:
     # inverted index entry: one token -> list of postings (sorted by doc_id)
     token: str
-    postings: list[Posting] = field(default_factory=list) # creates a brand new list for every instance of IndexEntry
+    postings: list[Posting] = field(
+        default_factory=list
+    )  # creates a brand new list for every instance of IndexEntry
 
-    def add_or_update_posting(self, doc_id: int, tf_delta: int, importance: Importance) -> None:
+    def add_or_update_posting(
+        self, doc_id: int, tf_delta: int, importance: Importance
+    ) -> None:
         # add tf to the posting for doc_id, or create one, merges importance
         for p in self.postings:
             if p.doc_id == doc_id:
@@ -48,13 +55,20 @@ class IndexEntry:
         for p in other.postings:
             self.add_or_update_posting(p.doc_id, p.tf, p.importance)
 
+
 class Index:
     # inverted index: token (str) -> IndexEntry (list of Postings)
     def __init__(self):
         self.entries: list[IndexEntry] = []
         self.token_to_entry: dict[str, IndexEntry] = {}
 
-    def add_token(self, token: str, doc_id: int, tf: int, importance: Importance = Importance.NORMAL) -> None:
+    def add_token(
+        self,
+        token: str,
+        doc_id: int,
+        tf: int,
+        importance: Importance = Importance.NORMAL,
+    ) -> None:
         if tf <= 0:
             return
         if token not in self.token_to_entry:
@@ -77,6 +91,12 @@ class Index:
                 bisect.insort(self.entries, entry, key=lambda x: x.token)
             else:
                 self.token_to_entry[entry.token].merge(entry)
+
+    def write_to_disk(self, path: str) -> None:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        data = {"entries": [asdict(e) for e in self.entries]}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
 
 
 @dataclass
@@ -101,46 +121,13 @@ class IndexStats:
         with open(path, "w", encoding="utf-8") as f:
             f.write(analytics)
 
-# --- Index I/O ---
-
-def _posting_to_dict(p: Posting) -> dict:
-    return {"doc_id": p.doc_id, "tf": p.tf, "importance": int(p.importance)}
-
-
-def _dict_to_posting(d: dict) -> Posting:
-    return Posting(
-        doc_id=d["doc_id"],
-        tf=d["tf"],
-        importance=Importance(d.get("importance", 0)),
-    )
-
-
-def _entry_to_dict(entry: IndexEntry) -> dict:
-    return {
-        "token": entry.token,
-        "postings": [_posting_to_dict(p) for p in entry.postings],
-    }
-
-
-def _dict_to_entry(d: dict) -> IndexEntry:
-    entry = IndexEntry(token=d["token"])
-    entry.postings = [_dict_to_posting(p) for p in d["postings"]]
-    return entry
-
-
-def write_partial_index(index: Index, path: str) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    data = {"entries": [_entry_to_dict(e) for e in index.entries]}
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
-
 
 def read_partial_index(path: str) -> Index:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     index = Index()
     for d in data["entries"]:
-        entry = _dict_to_entry(d)
+        entry = IndexEntry(**d)
         index.entries.append(entry)
         index.token_to_entry[entry.token] = entry
     index.entries.sort(key=lambda x: x.token)
@@ -152,7 +139,7 @@ def merge_partial_indexes(partial_paths: list[str], final_path: str) -> Index:
     for path in partial_paths:
         part = read_partial_index(path)
         merged.merge(part)
-    write_partial_index(merged, final_path)
+    merged.write_to_disk(final_path)
     return merged
 
 
