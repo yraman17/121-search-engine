@@ -1,4 +1,3 @@
-from unicodedata import category
 import warnings
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning

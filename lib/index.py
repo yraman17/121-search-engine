@@ -79,6 +79,28 @@ class Index:
                 self.token_to_entry[entry.token].merge(entry)
 
 
+@dataclass
+class IndexStats:
+    num_docs: int
+    num_unique_tokens: int
+    index_size_kb: float
+    exact_dups_removed: int
+    near_dups_removed: int
+
+    def print_and_write(self, path: str) -> None:
+        analytics = (
+            f"Index analytics (for report):\n"
+            f"  Number of indexed documents (after dedup): {self.num_docs}\n"
+            f"  Number of unique tokens:     {self.num_unique_tokens}\n"
+            f"  Total size of index on disk: {self.index_size_kb:.2f} KB\n"
+            f"  Exact duplicates removed:    {self.exact_dups_removed}\n"
+            f"  Near-duplicates removed:     {self.near_dups_removed}\n"
+        )
+        print(analytics)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(analytics)
+
 # --- Index I/O ---
 
 def _posting_to_dict(p: Posting) -> dict:

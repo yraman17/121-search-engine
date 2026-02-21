@@ -1,6 +1,5 @@
 from collections import defaultdict
 
-import nltk
 from nltk.tokenize import WordPunctTokenizer
 from nltk.stem import PorterStemmer
 
@@ -13,7 +12,7 @@ def tokenize(text: str) -> tuple[dict[str, int], dict[str, list[int]]]:
     if not text:
         return counts, starts
 
-    for (start, end) in WordPunctTokenizer().span_tokenize(text):
+    for start, end in WordPunctTokenizer().span_tokenize(text):
         raw = text[start:end]
         if not raw or not raw.isalnum():
             continue
