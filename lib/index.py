@@ -27,6 +27,14 @@ class Posting:
         if other.importance > self.importance:
             self.importance = other.importance
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "Posting":
+        return cls(
+            doc_id=d["doc_id"],
+            tf=d["tf"],
+            importance=Importance(d.get("importance", 0)),
+        )
+
 
 @dataclass
 class IndexEntry:
@@ -54,6 +62,12 @@ class IndexEntry:
         # merge postings from another IndexEntry
         for p in other.postings:
             self.add_or_update_posting(p.doc_id, p.tf, p.importance)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "IndexEntry":
+        entry = cls(token=d["token"])
+        entry.postings = [Posting.from_dict(p) for p in d["postings"]]
+        return entry
 
 
 class Index:
@@ -98,6 +112,16 @@ class Index:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "Index":
+        index = cls()
+        for e in d["entries"]:
+            entry = IndexEntry.from_dict(e)
+            index.entries.append(entry)
+            index.token_to_entry[entry.token] = entry
+        index.entries.sort(key=lambda x: x.token)
+        return index
+
 
 @dataclass
 class IndexStats:
@@ -127,7 +151,7 @@ def read_partial_index(path: str) -> Index:
         data = json.load(f)
     index = Index()
     for d in data["entries"]:
-        entry = IndexEntry(**d)
+        entry = IndexEntry.from_dict(d)
         index.entries.append(entry)
         index.token_to_entry[entry.token] = entry
     index.entries.sort(key=lambda x: x.token)
@@ -154,3 +178,4 @@ def read_doc_mapping(path: str) -> dict[int, str]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return {int(k): v for k, v in data.items()}
+
