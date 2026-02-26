@@ -3,6 +3,11 @@ import json
 import os
 from dataclasses import dataclass, field, asdict
 from enum import IntEnum
+from contextlib import ExitStack
+import heapq
+from typing import TextIO
+
+from lib.globals import FINAL_INDEX_DIR
 
 
 class Importance(IntEnum):
@@ -108,9 +113,11 @@ class Index:
 
     def write_to_disk(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        data = {"entries": [asdict(e) for e in self.entries]}
+        data = [e.to_dict() for e in self.entries]
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+            for e in data:
+                f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False))
+                f.write("\n")
 
     @classmethod
     def from_dict(cls, d: dict) -> "Index":
@@ -157,15 +164,44 @@ def read_partial_index(path: str) -> Index:
     index.entries.sort(key=lambda x: x.token)
     return index
 
+def push_entry_to_heap(heap: list[tuple[str, IndexEntry, TextIO]], file: TextIO) -> list[tuple[str, IndexEntry, TextIO]]:
+    line = file.readline()
+    if line:
+        entry = IndexEntry.from_dict(json.loads(line))
+        heapq.heappush(heap, (entry.token, entry, file))
+    return heap
 
-def merge_partial_indexes(partial_paths: list[str], final_path: str) -> Index:
-    merged = Index()
-    for path in partial_paths:
-        part = read_partial_index(path)
-        merged.merge(part)
-    merged.write_to_disk(final_path)
-    return merged
 
+def merge_partial_indexes(partial_paths: list[str]) -> None:
+    with ExitStack() as stack:
+        files = [stack.enter_context(open(path, "r", encoding="utf-8")) for path in partial_paths]
+        
+        heap = []
+        for file in files:
+            heap = push_entry_to_heap(heap, file)
+            
+        current_letter = 'a'
+        out_file = None
+
+        while heap:
+            token, entry, file = heapq.heappop(heap)
+            heap = push_entry_to_heap(heap, file)
+            
+            while heap and heap[0][0] == current_letter:
+                _, next_entry, same_file = heapq.heappop(heap)
+                entry.merge(next_entry)
+                heap = push_entry_to_heap(heap, same_file)
+            letter = token[0]
+            if letter != current_letter:
+                if out_file:
+                    out_file.close()
+                out_file = open(os.path.join(FINAL_INDEX_DIR, f"{current_letter}.json"), "w", encoding="utf-8")
+                current_letter = letter
+            
+            out_file.write(json.dumps(entry.to_dict(), separators=(",", ":"), ensure_ascii=False) + "\n")
+
+        if out_file:
+            out_file.close()
 
 def write_doc_mapping(doc_id_to_url: dict[int, str], path: str) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
