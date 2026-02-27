@@ -9,4 +9,4 @@ DATASET_DIR = "developer"
 PARTIAL_INDEX_DIR = os.path.join("index", "partials")
 FINAL_INDEX_DIR = os.path.join("index", "final")
 # Other constants
-BATCH_SIZE = 10000
+BATCH_SIZE = 5000

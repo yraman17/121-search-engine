@@ -97,7 +97,11 @@ class Index:
         self.token_to_entry[token].add_or_update_posting(doc_id, tf, importance)
 
     def get_entry(self, token: str) -> IndexEntry | None:
-        return self.token_to_entry.get(token)
+        # Return existing IndexEntry for token or empty IndexEntry
+        try:
+            return self.token_to_entry.get(token)
+        except KeyError:
+            return IndexEntry(token)
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -113,7 +117,7 @@ class Index:
 
     def write_to_disk(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        data = [e.to_dict() for e in self.entries]
+        data = [asdict(e) for e in self.entries]
         with open(path, "w", encoding="utf-8") as f:
             for e in data:
                 f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False))
@@ -152,6 +156,17 @@ class IndexStats:
         with open(path, "w", encoding="utf-8") as f:
             f.write(analytics)
 
+@dataclass(order=False)
+class HeapEntry:
+    token: str
+    entry: IndexEntry
+    file: TextIO
+
+    def __lt__(self, other): return self.token < other.token
+    def __le__(self, other): return self.token <= other.token
+    def __eq__(self, other): return self.token == other.token
+    def __iter__(self): return iter((self.token, self.entry, self.file))
+
 
 def read_partial_index(path: str) -> Index:
     with open(path, "r", encoding="utf-8") as f:
@@ -164,41 +179,47 @@ def read_partial_index(path: str) -> Index:
     index.entries.sort(key=lambda x: x.token)
     return index
 
-def push_entry_to_heap(heap: list[tuple[str, IndexEntry, TextIO]], file: TextIO) -> list[tuple[str, IndexEntry, TextIO]]:
+def push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
     line = file.readline()
     if line:
         entry = IndexEntry.from_dict(json.loads(line))
-        heapq.heappush(heap, (entry.token, entry, file))
+        heapq.heappush(heap, HeapEntry(entry.token, entry, file))
     return heap
 
 
 def merge_partial_indexes(partial_paths: list[str]) -> None:
     with ExitStack() as stack:
+        # Open all partial index files at once
         files = [stack.enter_context(open(path, "r", encoding="utf-8")) for path in partial_paths]
         
         heap = []
+        # Seed heap with first lines from each file
         for file in files:
             heap = push_entry_to_heap(heap, file)
-            
-        current_letter = 'a'
-        out_file = None
+          
+        current_letter = '0'
+        out_file = open(os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"), "w", encoding="utf-8")
 
         while heap:
+            # fetch top element and push the next one from the same file
             token, entry, file = heapq.heappop(heap)
             heap = push_entry_to_heap(heap, file)
             
-            while heap and heap[0][0] == current_letter:
+            # fetch and merge all the elements in heap that match the token popped initially
+            # - Every time we pop, we push the next entry in that file to the heap to keep growing the heap
+            while heap and heap[0].token == token:
                 _, next_entry, same_file = heapq.heappop(heap)
                 entry.merge(next_entry)
                 heap = push_entry_to_heap(heap, same_file)
+            # Check if new file needs to be made
             letter = token[0]
             if letter != current_letter:
                 if out_file:
                     out_file.close()
-                out_file = open(os.path.join(FINAL_INDEX_DIR, f"{current_letter}.json"), "w", encoding="utf-8")
                 current_letter = letter
+                out_file = open(os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"), "w", encoding="utf-8")
             
-            out_file.write(json.dumps(entry.to_dict(), separators=(",", ":"), ensure_ascii=False) + "\n")
+            out_file.write(json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False) + "\n")
 
         if out_file:
             out_file.close()

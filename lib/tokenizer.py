@@ -14,7 +14,7 @@ def tokenize(text: str) -> tuple[dict[str, int], dict[str, list[int]]]:
 
     for start, end in WordPunctTokenizer().span_tokenize(text):
         raw = text[start:end]
-        if not raw or not raw.isalnum():
+        if not raw or not raw.isalnum() or not raw.isascii():
             continue
         raw = raw.lower()
         stemmed = PorterStemmer().stem(raw)
