@@ -98,10 +98,7 @@ class Index:
 
     def get_entry(self, token: str) -> IndexEntry | None:
         # Return existing IndexEntry for token or empty IndexEntry
-        try:
-            return self.token_to_entry.get(token)
-        except KeyError:
-            return IndexEntry(token)
+        return self.token_to_entry.get(token)
 
     def __len__(self) -> int:
         return len(self.entries)

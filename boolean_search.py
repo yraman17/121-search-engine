@@ -19,7 +19,8 @@ def fetch_from_index(token) -> IndexEntry:
             index.entries.append(entry)
             index.token_to_entry[entry.token] = entry
         # fetch entry for this token
-        return index.get_entry(token)
+        entry = index.get_entry(token)
+        return entry if entry else IndexEntry(token)
 
 # def merge_postings(postings, search_type: SearchType):
 #     shared_docs = []

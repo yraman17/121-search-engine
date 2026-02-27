@@ -45,7 +45,7 @@ def build_index(
     dataset_dir: str = DATASET_DIR,
     partial_dir: str = PARTIAL_INDEX_DIR,
     final_dir: str = FINAL_INDEX_DIR,
-) -> IndexStats:
+) -> None:
     # Make directories if they don't exist
     os.makedirs(final_dir, exist_ok=True)
 
