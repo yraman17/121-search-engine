@@ -1,6 +1,7 @@
 import json
 import os
 from enum import Enum
+from re import T
 import sys
 from typing import Iterable, List, Tuple
 from lib.globals import FINAL_INDEX_DIR
@@ -17,13 +18,10 @@ def fetch_from_index(token) -> Tuple[IndexEntry, int]:
     starting_letter = token[0]
     with open(os.path.join(FINAL_INDEX_DIR, f"{starting_letter}.jsonl")) as file:
         # build index from file for this starting letter
-        index = Index()
         for line in file:
             entry = IndexEntry.from_dict(json.loads(line))
             if entry.token == token:
                 return entry
-            index.entries.append(entry)
-            index.token_to_entry[entry.token] = entry
             # test if token is in index
         return IndexEntry(token), 0
 
@@ -64,7 +62,7 @@ def process_query(raw_query: str) -> List[str]:
     return sorted(counts.keys())
 
 
-def score_doc(doc_id: int, token_entries: List["IndexEntry"]) -> float:
+def score_doc(doc_id: int, token_entries: List["IndexEntry"], num_docs: int) -> float:
     # score the document with bonus for higher importance
     score = 0.0
     importance_weight = 0.5
@@ -72,9 +70,7 @@ def score_doc(doc_id: int, token_entries: List["IndexEntry"]) -> float:
     for entry in token_entries:
         for p in entry.postings:
             if p.doc_id == doc_id:
-                score += p.tf
-                score += importance_weight * int(p.importance)
-                break
+                score = (1 + math.log(entry.get_tf(doc_id), 10)) * math.log((float(num_docs)/entry.df), 10)
 
     return score
 
@@ -108,9 +104,10 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
 
     with open(os.path.join(FINAL_INDEX_DIR, "doc_mapping.json"), "r") as f:
         doc_mapping = json.load(f)
+    num_docs = len(doc_mapping)
     scored_results: List[Tuple[int, float]] = []
     for doc_id in matching_doc_ids:
-        score = score_doc(doc_id, token_entries)
+        score = score_doc(doc_id, token_entries, num_docs)
         scored_results.append((doc_mapping[str(doc_id)], score))
 
     scored_results.sort(key=lambda x: x[1], reverse=True)

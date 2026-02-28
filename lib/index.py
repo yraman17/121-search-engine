@@ -40,14 +40,14 @@ class IndexEntry:
     postings: list[Posting] = field(
         default_factory=list
     )  # creates a brand new list for every instance of IndexEntry
-    tf: int = 0
     df: int = 0
 
-    def get_posting(self, doc_id: int) -> Posting | None:
-        i = bisect.bisect_left(self.postings, doc_id, key=lambda x: x.doc_id)
-        if i != len(self.postings) and self.postings[i].doc_id == doc_id:
-            return self.postings[i]
-        return None
+    @classmethod
+    def from_dict(cls, d: dict) -> "IndexEntry":
+        entry = cls(token=d["token"])
+        entry.postings = [Posting.from_dict(p) for p in d["postings"]]
+        entry.df = d["df"]
+        return entry
 
     def add_posting(self, posting: Posting) -> None:
         bisect.insort(self.postings, posting, key=lambda x: x.doc_id)
@@ -57,21 +57,19 @@ class IndexEntry:
         for p in other.postings:
             self.add_posting(p)
 
-    def calculate_tf_df(self) -> None:
+    def calculate_df(self) -> None:
         unique_doc_ids = set()
         for p in self.postings:
             unique_doc_ids.add(p.doc_id)
         self.df = len(unique_doc_ids)
-        self.tf = len(self.postings)
 
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "IndexEntry":
-        entry = cls(token=d["token"])
-        entry.postings = [Posting.from_dict(p) for p in d["postings"]]
-        entry.df = d["df"]
-        entry.tf = d["tf"]
-        return entry
+    def get_tf(self, doc_id: int) -> int:
+        i = bisect.bisect_left(self.postings, doc_id, key=lambda x: x.doc_id)
+        tf = 0
+        while i < len(self.postings) and self.postings[i].doc_id == doc_id:
+            tf += 1
+            i += 1
+        return tf
 
 
 class Index:
@@ -83,9 +81,6 @@ class Index:
     def __len__(self) -> int:
         return len(self.entries)
 
-    def insert_entry(self, entry):
-        bisect.insort(self.entries, entry, key=lambda x: x.token)
-
     @classmethod
     def from_dict(cls, d: dict) -> "Index":
         index = cls()
@@ -95,6 +90,9 @@ class Index:
             index.token_to_entry[entry.token] = entry
         index.entries.sort(key=lambda x: x.token)
         return index
+     
+    def insert_entry(self, entry):
+        bisect.insort(self.entries, entry, key=lambda x: x.token)
 
     def add_token(
         self, token: str, doc_id: int, start:int, importance: Importance = Importance.NORMAL
@@ -232,7 +230,7 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
                     encoding="utf-8",
                 )
 
-            entry.calculate_tf_df()
+            entry.calculate_df()
             out_file.write(
                 json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False)
                 + "\n"
