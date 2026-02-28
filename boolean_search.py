@@ -1,28 +1,31 @@
 import json
 import os
 from enum import Enum
+import sys
 from typing import Iterable, List, Tuple
 from lib.globals import FINAL_INDEX_DIR
 from lib.index import Index, IndexEntry
 from lib.index import Posting
 from lib.tokenizer import tokenize
+import math
 
 class SearchType(Enum):
-    AND = "and"
-    OR = "or"
+    AND = "AND"
+    OR = "OR"
 
-def fetch_from_index(token) -> IndexEntry:
+def fetch_from_index(token) -> Tuple[IndexEntry, int]:
     starting_letter = token[0]
     with open(os.path.join(FINAL_INDEX_DIR, f"{starting_letter}.jsonl")) as file:
         # build index from file for this starting letter
         index = Index()
         for line in file:
             entry = IndexEntry.from_dict(json.loads(line))
+            if entry.token == token:
+                return entry, entry.calculate_document_frequency()
             index.entries.append(entry)
             index.token_to_entry[entry.token] = entry
-        # fetch entry for this token
-        entry = index.get_entry(token)
-        return entry if entry else IndexEntry(token)
+            # test if token is in index
+        return IndexEntry(token), 0
 
 def merge_postings(
     postings_lists: Iterable[Iterable["Posting"]], search_type: "SearchType"
@@ -103,14 +106,24 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
     if not matching_doc_ids:
         return []
 
+    with open(os.path.join(FINAL_INDEX_DIR, "doc_mapping.json"), "r") as f:
+        doc_mapping = json.load(f)
     scored_results: List[Tuple[int, float]] = []
     for doc_id in matching_doc_ids:
         score = score_doc(doc_id, token_entries)
-        scored_results.append((doc_id, score))
+        scored_results.append((doc_mapping[str(doc_id)], score))
 
-    scored_results.sort(key=lambda x: (-x[1], x[0]))
+    scored_results.sort(key=lambda x: x[1], reverse=True)
     return scored_results
 
+def main(args: List[str]) -> None:
+    query = args[0]
+    output_num = 1
+    for query_token in query.split():
+        results = search(query_token)
+        for result in results:
+            print(f"{output_num}. URL: {result[0]}, Score: {result[1]}")
+            output_num += 1
+
 if __name__ == "__main__":
-    query = "cristina lopes"
-    print(search(query))
+    main(sys.argv[1:])

@@ -48,30 +48,47 @@ class IndexEntry:
     postings: list[Posting] = field(
         default_factory=list
     )  # creates a brand new list for every instance of IndexEntry
+    document_frequency: int = 0
+
+    def get_posting(self, doc_id: int) -> Posting | None:
+        i = bisect.bisect_left(self.postings, doc_id, key=lambda x: x.doc_id)
+        if i != len(self.postings) and self.postings[i].doc_id == doc_id:
+            return self.postings[i]
+        return None
+
+    def add_posting(self, posting: Posting) -> None:
+        bisect.insort(self.postings, posting, key=lambda x: x.doc_id)
 
     def add_or_update_posting(
         self, doc_id: int, tf_delta: int, importance: Importance
     ) -> None:
         # add tf to the posting for doc_id, or create one, merges importance
-        for p in self.postings:
-            if p.doc_id == doc_id:
-                p.tf += tf_delta
-                if importance > p.importance:
-                    p.importance = importance
-                return
-        # new doc for this token
-        self.postings.append(Posting(doc_id=doc_id, tf=tf_delta, importance=importance))
-        self.postings.sort(key=lambda x: x.doc_id)
+        posting = self.get_posting(doc_id)
+        if posting:
+            posting.tf += tf_delta
+            if importance > posting.importance:
+                posting.importance = importance
+            return
+        # new doc for this token and increment df since this doc is unique to this token now
+        self.add_posting(Posting(doc_id=doc_id, tf=tf_delta, importance=importance))
+        self.document_frequency += 1
 
     def merge(self, other: "IndexEntry") -> None:
         # merge postings from another IndexEntry
         for p in other.postings:
             self.add_or_update_posting(p.doc_id, p.tf, p.importance)
 
+    def calculate_document_frequency(self) -> None:
+        unique_doc_ids = set()
+        for p in self.postings:
+            unique_doc_ids.add(p.doc_id)
+        self.document_frequency = len(unique_doc_ids)
+
     @classmethod
     def from_dict(cls, d: dict) -> "IndexEntry":
         entry = cls(token=d["token"])
         entry.postings = [Posting.from_dict(p) for p in d["postings"]]
+        entry.document_frequency = d.get("document_frequency", 0)
         return entry
 
 
@@ -153,16 +170,24 @@ class IndexStats:
         with open(path, "w", encoding="utf-8") as f:
             f.write(analytics)
 
+
 @dataclass(order=False)
 class HeapEntry:
     token: str
     entry: IndexEntry
     file: TextIO
 
-    def __lt__(self, other): return self.token < other.token
-    def __le__(self, other): return self.token <= other.token
-    def __eq__(self, other): return self.token == other.token
-    def __iter__(self): return iter((self.token, self.entry, self.file))
+    def __lt__(self, other):
+        return self.token < other.token
+
+    def __le__(self, other):
+        return self.token <= other.token
+
+    def __eq__(self, other):
+        return self.token == other.token
+
+    def __iter__(self):
+        return iter((self.token, self.entry, self.file))
 
 
 def read_partial_index(path: str) -> Index:
@@ -176,6 +201,7 @@ def read_partial_index(path: str) -> Index:
     index.entries.sort(key=lambda x: x.token)
     return index
 
+
 def push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
     line = file.readline()
     if line:
@@ -187,21 +213,28 @@ def push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
 def merge_partial_indexes(partial_paths: list[str]) -> None:
     with ExitStack() as stack:
         # Open all partial index files at once
-        files = [stack.enter_context(open(path, "r", encoding="utf-8")) for path in partial_paths]
-        
+        files = [
+            stack.enter_context(open(path, "r", encoding="utf-8"))
+            for path in partial_paths
+        ]
+
         heap = []
         # Seed heap with first lines from each file
         for file in files:
             heap = push_entry_to_heap(heap, file)
-          
-        current_letter = '0'
-        out_file = open(os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"), "w", encoding="utf-8")
+
+        current_letter = "0"
+        out_file = open(
+            os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"),
+            "w",
+            encoding="utf-8",
+        )
 
         while heap:
             # fetch top element and push the next one from the same file
             token, entry, file = heapq.heappop(heap)
             heap = push_entry_to_heap(heap, file)
-            
+
             # fetch and merge all the elements in heap that match the token popped initially
             # - Every time we pop, we push the next entry in that file to the heap to keep growing the heap
             while heap and heap[0].token == token:
@@ -214,12 +247,20 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
                 if out_file:
                     out_file.close()
                 current_letter = letter
-                out_file = open(os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"), "w", encoding="utf-8")
-            
-            out_file.write(json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False) + "\n")
+                out_file = open(
+                    os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"),
+                    "w",
+                    encoding="utf-8",
+                )
+
+            out_file.write(
+                json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False)
+                + "\n"
+            )
 
         if out_file:
             out_file.close()
+
 
 def write_doc_mapping(doc_id_to_url: dict[int, str], path: str) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -232,4 +273,3 @@ def read_doc_mapping(path: str) -> dict[int, str]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return {int(k): v for k, v in data.items()}
-
