@@ -76,10 +76,7 @@ def score_doc(doc_id: int, token_entries: List["IndexEntry"]) -> float:
     return score
 
 
-def search(query: str, search_type: "SearchType" = None) -> List[Tuple[int, float]]:
-    if search_type is None:
-        search_type = SearchType.AND
-
+def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[int, float]]:
     tokens = process_query(query)
     if not tokens:
         return []
@@ -113,3 +110,7 @@ def search(query: str, search_type: "SearchType" = None) -> List[Tuple[int, floa
 
     scored_results.sort(key=lambda x: (-x[1], x[0]))
     return scored_results
+
+if __name__ == "__main__":
+    query = "cristina lopes"
+    print(search(query))
