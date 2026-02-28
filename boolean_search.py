@@ -21,7 +21,7 @@ def fetch_from_index(token) -> Tuple[IndexEntry, int]:
         for line in file:
             entry = IndexEntry.from_dict(json.loads(line))
             if entry.token == token:
-                return entry, entry.calculate_document_frequency()
+                return entry
             index.entries.append(entry)
             index.token_to_entry[entry.token] = entry
             # test if token is in index

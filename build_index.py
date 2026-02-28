@@ -2,8 +2,7 @@ import os
 
 from lib.doc_loading import iter_documents
 from lib.globals import DATASET_DIR, PARTIAL_INDEX_DIR, FINAL_INDEX_DIR, BATCH_SIZE
-from lib.parse_text import extract_text
-from lib.tokenizer import tokenize
+from lib.parse_text import extract_text, tokenize, assign_importance
 from lib.index import (
     Index,
     Importance,
@@ -85,11 +84,14 @@ def build_index(
             )
             current_index = Index()
         # text extraction and tokenization
-        normal_text, important_text = extract_text(html)
-        counts_normal, _ = tokenize(normal_text)
-        counts_important, _ = tokenize(important_text)
+        # normal_text, important_text = extract_text(html)
+        # counts_normal, _ = tokenize(normal_text)
+        # counts_important, _ = tokenize(important_text)
+        full_text, spans = extract_text(html)
+        counts, starts = tokenize(full_text)
+        token_importance = assign_importance(starts, spans)
         # duplicate detection
-        skip_reason, simhash_val = detector.check(html, counts_normal)
+        skip_reason, simhash_val = detector.check(html, counts)
         if skip_reason == "exact":
             exact_dups_removed += 1
             continue
@@ -104,10 +106,9 @@ def build_index(
             detector.add_doc(simhash_val, doc_id)
 
         doc_id_to_url[doc_id] = url
-        for token, tf in counts_normal.items():
-            current_index.add_token(token, doc_id, tf, Importance.NORMAL)
-        for token, tf in counts_important.items():
-            current_index.add_token(token, doc_id, tf, Importance.BOLD_OR_HEADING)
+        for token in token_importance:
+            for start, importance in token_importance[token]:
+                current_index.add_token(token, doc_id, start, importance)
 
     # write remaining in-memory index as last partial if non-empty
     if current_index:

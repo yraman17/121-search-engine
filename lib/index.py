@@ -21,23 +21,15 @@ class Importance(IntEnum):
 class Posting:
     # one posting: token's occurrence in a single document
     doc_id: int
-    tf: int  # term frequency
+    start: int
     importance: Importance = Importance.NORMAL
-
-    # merge two postings for the same doc_id
-    def merge_with(self, other: "Posting") -> None:
-        if other.doc_id != self.doc_id:
-            return
-        self.tf += other.tf
-        if other.importance > self.importance:
-            self.importance = other.importance
 
     @classmethod
     def from_dict(cls, d: dict) -> "Posting":
         return cls(
             doc_id=d["doc_id"],
-            tf=d["tf"],
-            importance=Importance(d.get("importance", 0)),
+            start=d["start"],
+            importance=Importance(d.get("importance", Importance.NORMAL)),
         )
 
 
@@ -48,7 +40,8 @@ class IndexEntry:
     postings: list[Posting] = field(
         default_factory=list
     )  # creates a brand new list for every instance of IndexEntry
-    document_frequency: int = 0
+    tf: int = 0
+    df: int = 0
 
     def get_posting(self, doc_id: int) -> Posting | None:
         i = bisect.bisect_left(self.postings, doc_id, key=lambda x: x.doc_id)
@@ -59,36 +52,25 @@ class IndexEntry:
     def add_posting(self, posting: Posting) -> None:
         bisect.insort(self.postings, posting, key=lambda x: x.doc_id)
 
-    def add_or_update_posting(
-        self, doc_id: int, tf_delta: int, importance: Importance
-    ) -> None:
-        # add tf to the posting for doc_id, or create one, merges importance
-        posting = self.get_posting(doc_id)
-        if posting:
-            posting.tf += tf_delta
-            if importance > posting.importance:
-                posting.importance = importance
-            return
-        # new doc for this token and increment df since this doc is unique to this token now
-        self.add_posting(Posting(doc_id=doc_id, tf=tf_delta, importance=importance))
-        self.document_frequency += 1
-
     def merge(self, other: "IndexEntry") -> None:
         # merge postings from another IndexEntry
         for p in other.postings:
-            self.add_or_update_posting(p.doc_id, p.tf, p.importance)
+            self.add_posting(p)
 
-    def calculate_document_frequency(self) -> None:
+    def calculate_tf_df(self) -> None:
         unique_doc_ids = set()
         for p in self.postings:
             unique_doc_ids.add(p.doc_id)
-        self.document_frequency = len(unique_doc_ids)
+        self.df = len(unique_doc_ids)
+        self.tf = len(self.postings)
+
 
     @classmethod
     def from_dict(cls, d: dict) -> "IndexEntry":
         entry = cls(token=d["token"])
         entry.postings = [Posting.from_dict(p) for p in d["postings"]]
-        entry.document_frequency = d.get("document_frequency", 0)
+        entry.df = d["df"]
+        entry.tf = d["tf"]
         return entry
 
 
@@ -98,44 +80,11 @@ class Index:
         self.entries: list[IndexEntry] = []
         self.token_to_entry: dict[str, IndexEntry] = {}
 
-    def add_token(
-        self,
-        token: str,
-        doc_id: int,
-        tf: int,
-        importance: Importance = Importance.NORMAL,
-    ) -> None:
-        if tf <= 0:
-            return
-        if token not in self.token_to_entry:
-            entry = IndexEntry(token=token)
-            self.token_to_entry[token] = entry
-            bisect.insort(self.entries, entry, key=lambda x: x.token)
-        self.token_to_entry[token].add_or_update_posting(doc_id, tf, importance)
-
-    def get_entry(self, token: str) -> IndexEntry | None:
-        # Return existing IndexEntry for token or empty IndexEntry
-        return self.token_to_entry.get(token)
-
     def __len__(self) -> int:
         return len(self.entries)
 
-    def merge(self, other: "Index") -> None:
-        # merge another index into this one
-        for entry in other.entries:
-            if entry.token not in self.token_to_entry:
-                self.token_to_entry[entry.token] = entry
-                bisect.insort(self.entries, entry, key=lambda x: x.token)
-            else:
-                self.token_to_entry[entry.token].merge(entry)
-
-    def write_to_disk(self, path: str) -> None:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        data = [asdict(e) for e in self.entries]
-        with open(path, "w", encoding="utf-8") as f:
-            for e in data:
-                f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False))
-                f.write("\n")
+    def insert_entry(self, entry):
+        bisect.insort(self.entries, entry, key=lambda x: x.token)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Index":
@@ -146,6 +95,36 @@ class Index:
             index.token_to_entry[entry.token] = entry
         index.entries.sort(key=lambda x: x.token)
         return index
+
+    def add_token(
+        self, token: str, doc_id: int, start:int, importance: Importance = Importance.NORMAL
+    ) -> None:
+        if token not in self.token_to_entry:
+            entry = IndexEntry(token=token)
+            self.token_to_entry[token] = entry
+            self.insert_entry(entry)
+        self.token_to_entry[token].add_posting(Posting(doc_id, start, importance))
+
+    def get_entry(self, token: str) -> IndexEntry | None:
+        # Return existing IndexEntry for token or empty IndexEntry
+        return self.token_to_entry.get(token)
+
+    def merge(self, other: "Index") -> None:
+        # merge another index into this one
+        for entry in other.entries:
+            if entry.token not in self.token_to_entry:
+                self.token_to_entry[entry.token] = entry
+                self.insert_entry(entry)
+            else:
+                self.token_to_entry[entry.token].merge(entry)
+
+    def write_to_disk(self, path: str) -> None:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        data = [asdict(e) for e in self.entries]
+        with open(path, "w", encoding="utf-8") as f:
+            for e in data:
+                f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False))
+                f.write("\n")
 
 
 @dataclass
@@ -253,6 +232,7 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
                     encoding="utf-8",
                 )
 
+            entry.calculate_tf_df()
             out_file.write(
                 json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False)
                 + "\n"
