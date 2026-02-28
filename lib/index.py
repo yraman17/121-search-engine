@@ -91,12 +91,16 @@ class Index:
             index.token_to_entry[entry.token] = entry
         index.entries.sort(key=lambda x: x.token)
         return index
-     
+
     def insert_entry(self, entry):
         bisect.insort(self.entries, entry, key=lambda x: x.token)
 
     def add_token(
-        self, token: str, doc_id: int, start:int, importance: Importance = Importance.NORMAL
+        self,
+        token: str,
+        doc_id: int,
+        start: int,
+        importance: Importance = Importance.NORMAL,
     ) -> None:
         if token not in self.token_to_entry:
             entry = IndexEntry(token=token)
@@ -207,6 +211,7 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
             "w",
             encoding="utf-8",
         )
+        offsets = {}
 
         while heap:
             # fetch top element and push the next one from the same file
@@ -232,6 +237,7 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
                 )
 
             entry.calculate_df()
+            offsets[entry.token] = out_file.tell()
             out_file.write(
                 json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False)
                 + "\n"
@@ -239,6 +245,10 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
 
         if out_file:
             out_file.close()
+        with open(
+            os.path.join(FINAL_INDEX_DIR, "offset.json"), "w", encoding="utf-8"
+        ) as offset_file:
+            json.dump(offsets, offset_file)
 
 
 def write_doc_mapping(doc_id_to_url: dict[int, str], path: str) -> None:

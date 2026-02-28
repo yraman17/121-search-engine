@@ -55,11 +55,10 @@ def extract_text(html_text: str) -> tuple[str, str]:
 
 def tokenize(text: str) -> tuple[dict[str, int], dict[str, list[int]]]:
     # tokenize text into stemmed terms; return token counts and start positions per term
-    counts: defaultdict[str, int] = defaultdict(int)
     starts: defaultdict[str, list[int]] = defaultdict(list)
 
     if not text:
-        return counts, starts
+        return starts
 
     tokenizer = WordPunctTokenizer()
     stemmer = PorterStemmer()
@@ -70,11 +69,9 @@ def tokenize(text: str) -> tuple[dict[str, int], dict[str, list[int]]]:
             continue
         raw = raw.lower()
         stemmed = stemmer.stem(raw)
-
-        counts[stemmed] += 1
         starts[stemmed].append(start)
 
-    return counts, starts
+    return starts
 
 
 def assign_importance(

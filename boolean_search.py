@@ -1,29 +1,36 @@
+import bisect
 import json
 import os
 from enum import Enum
 from re import T
 import sys
+import time
 from typing import Iterable, List, Tuple
 from lib.globals import FINAL_INDEX_DIR
-from lib.index import Index, IndexEntry
+from lib.index import IndexEntry
 from lib.index import Posting
-from lib.tokenizer import tokenize
+from lib.parse_text import tokenize
 import math
+
+OFFSETS = {}
 
 class SearchType(Enum):
     AND = "AND"
     OR = "OR"
 
-def fetch_from_index(token) -> Tuple[IndexEntry, int]:
-    starting_letter = token[0]
-    with open(os.path.join(FINAL_INDEX_DIR, f"{starting_letter}.jsonl")) as file:
-        # build index from file for this starting letter
-        for line in file:
-            entry = IndexEntry.from_dict(json.loads(line))
-            if entry.token == token:
-                return entry
-            # test if token is in index
-        return IndexEntry(token), 0
+def build_offsets():
+    with open(os.path.join(FINAL_INDEX_DIR, "offset.json"), "r", encoding="utf-8") as offset_file:
+        for line in offset_file:
+            OFFSETS.update(json.loads(line))
+
+def fetch_from_index(token) -> IndexEntry:
+    offset = OFFSETS.get(token)
+    if offset is None:
+        return IndexEntry(token)
+    with open(os.path.join(FINAL_INDEX_DIR, f"{token[0]}.jsonl")) as file:
+        file.seek(offset)
+        return IndexEntry.from_dict(json.loads(file.readline()))
+        
 
 def merge_postings(
     postings_lists: Iterable[Iterable["Posting"]], search_type: "SearchType"
@@ -56,16 +63,15 @@ def merge_postings(
 
 def process_query(raw_query: str) -> List[str]:
     # tokenize and stem the raw query
-    counts, _ = tokenize(raw_query)
-    if not counts:
+    starts = tokenize(raw_query)
+    if not starts:
         return []
-    return sorted(counts.keys())
+    return sorted(starts.keys()) # ! does this need to be sorted?
 
 
 def score_doc(doc_id: int, token_entries: List["IndexEntry"], num_docs: int) -> float:
     # score the document with bonus for higher importance
     score = 0.0
-
     for entry in token_entries:
         # importance already factored into tf calculation, so just calculate tf-idf
         tf_raw = entry.get_tf(doc_id)
@@ -118,13 +124,17 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
     return scored_results
 
 def main(args: List[str]) -> None:
+    build_offsets()
     query = args[0]
     output_num = 1
-    for query_token in query.split():
-        results = search(query_token)
-        for result in results:
-            print(f"{output_num}. URL: {result[0]}, Score: {result[1]}")
-            output_num += 1
+    start = time.perf_counter()
+    results = search(query)
+    elapsed = time.perf_counter() - start
+    for result in results:
+        print(f"{output_num}. URL: {result[0]}, Score: {result[1]}")
+        output_num += 1
+    print(f"Search completed in {elapsed * 1000:.2f}ms")
+        
 
 if __name__ == "__main__":
     main(sys.argv[1:])

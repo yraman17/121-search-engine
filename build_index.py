@@ -88,10 +88,10 @@ def build_index(
         # counts_normal, _ = tokenize(normal_text)
         # counts_important, _ = tokenize(important_text)
         full_text, spans = extract_text(html)
-        counts, starts = tokenize(full_text)
+        starts = tokenize(full_text)
         token_importance = assign_importance(starts, spans)
         # duplicate detection
-        skip_reason, simhash_val = detector.check(html, counts)
+        skip_reason, simhash_val = detector.check(html, {token: len(starts) for token, starts in starts})
         if skip_reason == "exact":
             exact_dups_removed += 1
             continue
@@ -158,17 +158,17 @@ def build_index(
 
 def main() -> None:
 
-    print("=" * 60)
-    print("Milestone 1: Inverted Index Builder")
-    print("=" * 60 + "\n")
+    # print("=" * 60)
+    # print("Milestone 1: Inverted Index Builder")
+    # print("=" * 60 + "\n")
 
-    build_index()
+    # build_index()
 
-    print("=" * 60)
+    # print("=" * 60)
 
     # Merge from partials
-    # partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
-    # merge_partial_indexes(partial_paths)
+    partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
+    merge_partial_indexes(partial_paths)
 
 
 if __name__ == "__main__":
