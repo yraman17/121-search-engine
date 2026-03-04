@@ -65,13 +65,17 @@ def process_query(raw_query: str) -> List[str]:
 def score_doc(doc_id: int, token_entries: List["IndexEntry"], num_docs: int) -> float:
     # score the document with bonus for higher importance
     score = 0.0
-    importance_weight = 0.5
 
     for entry in token_entries:
-        for p in entry.postings:
-            if p.doc_id == doc_id:
-                score = (1 + math.log(entry.get_tf(doc_id), 10)) * math.log((float(num_docs)/entry.df), 10)
-
+        # importance already factored into tf calculation, so just calculate tf-idf
+        tf_raw = entry.get_tf(doc_id)
+        # skip if doc_id doesn't occur in this entries postings
+        if tf_raw == 0:
+            continue
+        tf = (1 + math.log(tf_raw, 10)) 
+        idf = math.log((float(num_docs)/entry.df), 10)
+        score += tf * idf
+                
     return score
 
 

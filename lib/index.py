@@ -67,7 +67,8 @@ class IndexEntry:
         i = bisect.bisect_left(self.postings, doc_id, key=lambda x: x.doc_id)
         tf = 0
         while i < len(self.postings) and self.postings[i].doc_id == doc_id:
-            tf += 1
+            importance_bonus = 1 + self.postings[i].importance * 0.5
+            tf += importance_bonus
             i += 1
         return tf
 
