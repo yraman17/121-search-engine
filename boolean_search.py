@@ -1,29 +1,41 @@
 import json
-import os
 from enum import Enum
-from re import T
 import sys
 from typing import Iterable, List, Tuple
-from lib.globals import FINAL_INDEX_DIR
-from lib.index import Index, IndexEntry
+from lib.globals import DOC_MAPPING_PATH, OFFSET_INDEX_PATH, FINAL_INDEX_PATH
+from lib.index import IndexEntry
 from lib.index import Posting
 from lib.tokenizer import tokenize
 import math
+
+OFFSETS = {}
+
 
 class SearchType(Enum):
     AND = "AND"
     OR = "OR"
 
-def fetch_from_index(token) -> Tuple[IndexEntry, int]:
-    starting_letter = token[0]
-    with open(os.path.join(FINAL_INDEX_DIR, f"{starting_letter}.jsonl")) as file:
-        # build index from file for this starting letter
-        for line in file:
+
+def load_offsets() -> None:
+    with open(OFFSET_INDEX_PATH, "r") as f:
+        for line in f:
+            entry = json.loads(line)
+            OFFSETS[entry["token"]] = entry["offset"]
+
+
+def fetch_from_index(token) -> IndexEntry | None:
+    # fetch the IndexEntry for the given token using the offset index
+    if token not in OFFSETS:
+        return None
+
+    offset = OFFSETS[token]
+    with open(FINAL_INDEX_PATH, "r", encoding="utf-8") as f:
+        f.seek(offset)
+        line = f.readline()
+        if line:
             entry = IndexEntry.from_dict(json.loads(line))
-            if entry.token == token:
-                return entry
-            # test if token is in index
-        return IndexEntry(token), 0
+            return entry
+
 
 def merge_postings(
     postings_lists: Iterable[Iterable["Posting"]], search_type: "SearchType"
@@ -72,14 +84,16 @@ def score_doc(doc_id: int, token_entries: List["IndexEntry"], num_docs: int) -> 
         # skip if doc_id doesn't occur in this entries postings
         if tf_raw == 0:
             continue
-        tf = (1 + math.log(tf_raw, 10)) 
-        idf = math.log((float(num_docs)/entry.df), 10)
+        tf = 1 + math.log(tf_raw, 10)
+        idf = math.log((float(num_docs) / entry.df), 10)
         score += tf * idf
-                
+
     return score
 
 
-def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[int, float]]:
+def search(
+    query: str, search_type: SearchType = SearchType.AND
+) -> List[Tuple[int, float]]:
     tokens = process_query(query)
     if not tokens:
         return []
@@ -89,7 +103,7 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
 
     for token in tokens:
         entry = fetch_from_index(token)
-        if not entry.postings:
+        if not entry or not entry.postings:
             # if AND, if token has no postings, can't be satisfied
             if search_type == SearchType.AND:
                 return []
@@ -106,7 +120,7 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
     if not matching_doc_ids:
         return []
 
-    with open(os.path.join(FINAL_INDEX_DIR, "doc_mapping.json"), "r") as f:
+    with open(DOC_MAPPING_PATH, "r") as f:
         doc_mapping = json.load(f)
     num_docs = len(doc_mapping)
     scored_results: List[Tuple[int, float]] = []
@@ -117,7 +131,9 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
     scored_results.sort(key=lambda x: x[1], reverse=True)
     return scored_results
 
+
 def main(args: List[str]) -> None:
+    load_offsets()
     query = args[0]
     output_num = 1
     for query_token in query.split():
@@ -125,6 +141,7 @@ def main(args: List[str]) -> None:
         for result in results:
             print(f"{output_num}. URL: {result[0]}, Score: {result[1]}")
             output_num += 1
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])

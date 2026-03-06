@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="bs4")
 
 
-def extract_text(html_text: str) -> tuple[str, str]:
+def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]]:
     # extract plain text from HTML; return (body text, important text from title/headings/bold)
     if not html_text:
         return "", []
@@ -79,7 +79,7 @@ def tokenize(text: str) -> tuple[dict[str, int], dict[str, list[int]]]:
 
 def assign_importance(
     starts: dict[str, list[int]], spans: list[tuple[int, int, Importance]]
-) -> dict[str, list[int, Importance]]:
+) -> dict[str, list[tuple[int, Importance]]]:
     # get where each chunk in spans starts
     span_starts = [span[0] for span in spans]
     # dict tokens to list of starts with importances
@@ -96,6 +96,6 @@ def assign_importance(
                 # make sure pos in found tuple and is more important than current best
                 if start <= pos <= end and importance > best:
                     best = importance
-            token_importance[token].append((pos, importance))
+            token_importance[token].append((pos, best))
 
     return token_importance

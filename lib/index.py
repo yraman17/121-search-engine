@@ -7,7 +7,7 @@ from contextlib import ExitStack
 import heapq
 from typing import TextIO
 
-from lib.globals import FINAL_INDEX_DIR
+from lib.globals import FINAL_INDEX_PATH, OFFSET_INDEX_PATH
 
 
 class Importance(IntEnum):
@@ -63,7 +63,7 @@ class IndexEntry:
             unique_doc_ids.add(p.doc_id)
         self.df = len(unique_doc_ids)
 
-    def get_tf(self, doc_id: int) -> int:
+    def get_tf(self, doc_id: int) -> float:
         i = bisect.bisect_left(self.postings, doc_id, key=lambda x: x.doc_id)
         tf = 0
         while i < len(self.postings) and self.postings[i].doc_id == doc_id:
@@ -91,12 +91,16 @@ class Index:
             index.token_to_entry[entry.token] = entry
         index.entries.sort(key=lambda x: x.token)
         return index
-     
+
     def insert_entry(self, entry):
         bisect.insort(self.entries, entry, key=lambda x: x.token)
 
     def add_token(
-        self, token: str, doc_id: int, start:int, importance: Importance = Importance.NORMAL
+        self,
+        token: str,
+        doc_id: int,
+        start: int,
+        importance: Importance = Importance.NORMAL,
     ) -> None:
         if token not in self.token_to_entry:
             entry = IndexEntry(token=token)
@@ -164,9 +168,6 @@ class HeapEntry:
     def __eq__(self, other):
         return self.token == other.token
 
-    def __iter__(self):
-        return iter((self.token, self.entry, self.file))
-
 
 def read_partial_index(path: str) -> Index:
     with open(path, "r", encoding="utf-8") as f:
@@ -197,55 +198,43 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
         ]
 
         heap = []
+        offsets = {}
         # Seed heap with first lines from each file
         for file in files:
             heap = push_entry_to_heap(heap, file)
 
-        current_letter = "0"
-        out_file = open(
-            os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"),
-            "w",
-            encoding="utf-8",
-        )
+        out_file = open(FINAL_INDEX_PATH, "w", encoding="utf-8")
 
         while heap:
             # fetch top element and push the next one from the same file
-            token, entry, file = heapq.heappop(heap)
+            heap_entry = heapq.heappop(heap)
+            token, entry, file = heap_entry.token, heap_entry.entry, heap_entry.file
             heap = push_entry_to_heap(heap, file)
 
             # fetch and merge all the elements in heap that match the token popped initially
             # - Every time we pop, we push the next entry in that file to the heap to keep growing the heap
             while heap and heap[0].token == token:
-                _, next_entry, same_file = heapq.heappop(heap)
+                next_heap_entry = heapq.heappop(heap)
+                next_entry, same_file = next_heap_entry.entry, next_heap_entry.file
                 entry.merge(next_entry)
                 heap = push_entry_to_heap(heap, same_file)
-            # Check if new file needs to be made
-            letter = token[0]
-            if letter != current_letter:
-                if out_file:
-                    out_file.close()
-                current_letter = letter
-                out_file = open(
-                    os.path.join(FINAL_INDEX_DIR, f"{current_letter}.jsonl"),
-                    "w",
-                    encoding="utf-8",
-                )
 
             entry.calculate_df()
-            out_file.write(
-                json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False)
-                + "\n"
-            )
+            offsets[token] = out_file.tell()
+            out_file.write(json.dumps(asdict(entry), ensure_ascii=False) + "\n")
 
         if out_file:
             out_file.close()
+            
+        with open(OFFSET_INDEX_PATH, "w", encoding="utf-8") as f:
+            json.dump(offsets, f, ensure_ascii=False)
 
 
 def write_doc_mapping(doc_id_to_url: dict[int, str], path: str) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     data = {str(k): v for k, v in doc_id_to_url.items()}
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+        json.dump(data, f, ensure_ascii=False)
 
 
 def read_doc_mapping(path: str) -> dict[int, str]:
