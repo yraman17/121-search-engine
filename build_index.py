@@ -1,10 +1,12 @@
 import os
 
 from lib.doc_loading import iter_documents
-from lib.globals import DATASET_DIR, DOC_MAPPING_PATH, PARTIAL_INDEX_DIR, FINAL_INDEX_DIR, BATCH_SIZE
+from lib.globals import DATASET_DIR, PARTIAL_INDEX_DIR, FINAL_INDEX_DIR, BATCH_SIZE
 from lib.parse_text import extract_text, tokenize, assign_importance
 from lib.index import (
     Index,
+    Importance,
+    IndexStats,
     merge_partial_indexes,
     write_doc_mapping,
 )
@@ -123,6 +125,7 @@ def build_index(
     # final_index_path = os.path.join(final_dir, "index.json")
     if not partial_paths:
         print("\tNo partial indexes to merge (empty corpus)")
+        num_unique_tokens = 0
     else:
         # prints merging partial indexes
         print("\tReading and merging partial indexes...")
@@ -136,8 +139,9 @@ def build_index(
 
     # persist doc_id -> URL mapping for report and future search
     print(f"[4/5] Writing document mapping ({len(doc_id_to_url)} documents)...")
-    write_doc_mapping(doc_id_to_url, DOC_MAPPING_PATH)
-    print(f"\tDocument mapping saved to {DOC_MAPPING_PATH}\n")
+    doc_mapping_path = os.path.join(final_dir, "doc_mapping.json")
+    write_doc_mapping(doc_id_to_url, doc_mapping_path)
+    print(f"\tDocument mapping saved to {doc_mapping_path}\n")
 
     # analytics: index size on disk (final index file + doc mapping, or just index per spec)
     # print("[5/5] Computing analytics...")
@@ -158,13 +162,13 @@ def main() -> None:
     print("Milestone 1: Inverted Index Builder")
     print("=" * 60 + "\n")
 
-    # build_index()
+    build_index()
 
     print("=" * 60)
 
-    Merge from partials
-    partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
-    merge_partial_indexes(partial_paths)
+    # Merge from partials
+    # partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
+    # merge_partial_indexes(partial_paths)
 
 
 if __name__ == "__main__":
