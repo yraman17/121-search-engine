@@ -25,7 +25,7 @@ def _print_progress(file_count, doc_count, exact_dups, near_dups, unique_tokens)
 
 def _offload_partial_index(index: Index, dir: str, paths: list[str], doc_id: int):
     part_path = os.path.join(dir, f"partial_{len(paths)}.jsonl")
-    total_postings = sum(len(entry.postings) for entry in index.entries)
+    total_postings = sum(len(entry.doc_postings) for entry in index.entries)
     print(f"      Writing partial index #{len(paths)}:")
     print(f"         - {len(index)} unique tokens")
     print(f"         - {total_postings} total postings")
@@ -91,7 +91,7 @@ def build_index(
         starts = tokenize(full_text)
         token_importance = assign_importance(starts, spans)
         # duplicate detection
-        skip_reason, simhash_val = detector.check(html, {token: len(starts) for token, starts in starts})
+        skip_reason, simhash_val = detector.check(html, {token: len(starts) for token, starts in starts.items()})
         if skip_reason == "exact":
             exact_dups_removed += 1
             continue
@@ -158,13 +158,13 @@ def build_index(
 
 def main() -> None:
 
-    # print("=" * 60)
-    # print("Milestone 1: Inverted Index Builder")
-    # print("=" * 60 + "\n")
+    print("=" * 60)
+    print("Milestone 1: Inverted Index Builder")
+    print("=" * 60 + "\n")
 
     # build_index()
 
-    # print("=" * 60)
+    print("=" * 60)
 
     # Merge from partials
     partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]

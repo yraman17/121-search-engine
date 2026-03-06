@@ -6,8 +6,8 @@ from re import T
 import sys
 import time
 from typing import Iterable, List, Tuple
-from lib.globals import FINAL_INDEX_DIR
-from lib.index import IndexEntry
+from lib.globals import FINAL_INDEX_PATH, OFFSET_INDEX_PATH, DOC_MAPPING_PATH
+from lib.index import DocPosting, IndexEntry
 from lib.index import Posting
 from lib.parse_text import tokenize
 import math
@@ -19,7 +19,7 @@ class SearchType(Enum):
     OR = "OR"
 
 def build_offsets():
-    with open(os.path.join(FINAL_INDEX_DIR, "offset.json"), "r", encoding="utf-8") as offset_file:
+    with open(OFFSET_INDEX_PATH, "r", encoding="utf-8") as offset_file:
         for line in offset_file:
             OFFSETS.update(json.loads(line))
 
@@ -27,13 +27,13 @@ def fetch_from_index(token) -> IndexEntry:
     offset = OFFSETS.get(token)
     if offset is None:
         return IndexEntry(token)
-    with open(os.path.join(FINAL_INDEX_DIR, f"{token[0]}.jsonl")) as file:
+    with open(FINAL_INDEX_PATH, "r", encoding="utf-8") as file:
         file.seek(offset)
         return IndexEntry.from_dict(json.loads(file.readline()))
         
 
 def merge_postings(
-    postings_lists: Iterable[Iterable["Posting"]], search_type: "SearchType"
+    postings_lists: Iterable[Iterable["DocPosting"]], search_type: "SearchType"
 ) -> List[int]:
     # merge postings according to given SearchType
 
@@ -69,18 +69,19 @@ def process_query(raw_query: str) -> List[str]:
     return sorted(starts.keys()) # ! does this need to be sorted?
 
 
-def score_doc(doc_id: int, token_entries: List["IndexEntry"], num_docs: int) -> float:
+def score_doc(unique_query_tokens: set[str], doc_id: int, token_entries: List["IndexEntry"], num_docs: int) -> float:
     # score the document with bonus for higher importance
     score = 0.0
     for entry in token_entries:
-        # importance already factored into tf calculation, so just calculate tf-idf
-        tf_raw = entry.get_tf(doc_id)
-        # skip if doc_id doesn't occur in this entries postings
-        if tf_raw == 0:
-            continue
-        tf = (1 + math.log(tf_raw, 10)) 
-        idf = math.log((float(num_docs)/entry.df), 10)
-        score += tf * idf
+        if entry.token in unique_query_tokens:
+            # importance already factored into tf calculation, so just calculate tf-idf
+            tf_raw = entry.get_tf(doc_id)
+            # skip if doc_id doesn't occur in this entries postings
+            if tf_raw == 0:
+                continue
+            tf = (1 + math.log(tf_raw, 10)) 
+            idf = math.log((float(num_docs)/entry.df), 10)
+            score += tf * idf
                 
     return score
 
@@ -91,11 +92,11 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
         return []
 
     token_entries: List[IndexEntry] = []
-    postings_lists: List[Iterable[Posting]] = []
+    postings_lists: List[Iterable[DocPosting]] = []
 
     for token in tokens:
         entry = fetch_from_index(token)
-        if not entry.postings:
+        if not entry.doc_postings:
             # if AND, if token has no postings, can't be satisfied
             if search_type == SearchType.AND:
                 return []
@@ -103,7 +104,7 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
             continue
 
         token_entries.append(entry)
-        postings_lists.append(entry.postings)
+        postings_lists.append(entry.doc_postings)
 
     if not postings_lists:
         return []
@@ -112,12 +113,13 @@ def search(query: str, search_type: SearchType = SearchType.AND) -> List[Tuple[i
     if not matching_doc_ids:
         return []
 
-    with open(os.path.join(FINAL_INDEX_DIR, "doc_mapping.json"), "r") as f:
+    with open(DOC_MAPPING_PATH, "r") as f:
         doc_mapping = json.load(f)
     num_docs = len(doc_mapping)
     scored_results: List[Tuple[int, float]] = []
+    unique_query_tokens = set(tokens)
     for doc_id in matching_doc_ids:
-        score = score_doc(doc_id, token_entries, num_docs)
+        score = score_doc(unique_query_tokens, doc_id, token_entries, num_docs)
         scored_results.append((doc_mapping[str(doc_id)], score))
 
     scored_results.sort(key=lambda x: x[1], reverse=True)
