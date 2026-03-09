@@ -1,4 +1,5 @@
 import os
+import sys
 
 from lib.common import write_doc_mapping
 from lib.doc_loading import iter_documents
@@ -9,7 +10,6 @@ from lib.index import (
     merge_partial_indexes,
 )
 from lib.parse_text import assign_importance, extract_text, tokenize
-from lib.vector import build_vector_index
 
 
 def _get_file_size_kb(path: str) -> float:
@@ -26,7 +26,7 @@ def _print_progress(file_count, doc_count, exact_dups, near_dups, unique_tokens)
 
 def _offload_partial_index(index: Index, directory: str, paths: list[str], doc_id: int):
     part_path = os.path.join(directory, f"partial_{len(paths)}.jsonl")
-    total_postings = sum(len(entry.doc_postings) for entry in index.entries)
+    total_postings = sum(len(entry.doc_postings) for entry in index.token_to_entry.values())
     print(f"      Writing partial index #{len(paths)}:")
     print(f"         - {len(index)} unique tokens")
     print(f"         - {total_postings} total postings")
@@ -120,20 +120,13 @@ def build_index(
     write_doc_mapping(doc_id_to_url)
     print("\tDocument mapping saved to disk\n")
 
-def main() -> None:
-
-    print("=" * 60)
-    print("Milestone 1: Inverted Index Builder")
-    print("=" * 60 + "\n")
-
-    # build_index()
-
-    print("=" * 60)
-
-    # Merge from partials
-    partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
-    merge_partial_indexes(partial_paths)
+def main(arg) -> None:
+    if arg:
+        build_index()
+    else:
+        partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
+        merge_partial_indexes(partial_paths)
 
 
 if __name__ == "__main__":
-    main()
+    main(int(sys.argv[1]))

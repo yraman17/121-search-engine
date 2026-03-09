@@ -1,8 +1,9 @@
 import bisect
 import warnings
+from collections import defaultdict
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
-from collections import defaultdict
+from nltk import bigrams
 from nltk.stem import PorterStemmer
 from nltk.tokenize import WordPunctTokenizer
 
@@ -12,6 +13,9 @@ from lib.index import Importance
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="bs4")
 
+_tokenizer = WordPunctTokenizer()
+_stemmer = PorterStemmer()
+
 
 def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]]:
     # extract plain text from HTML; return (body text, important text from title/headings/bold)
@@ -19,7 +23,7 @@ def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]
         return "", []
 
     soup = BeautifulSoup(html_text, "lxml")
-    IMPORTANT_TAGS = {"h1", "h2", "h3", "b", "strong", "title"}
+    important_tags = {"h1", "h2", "h3", "b", "strong", "title"}
 
     text_chunks = []
     spans = []
@@ -34,12 +38,8 @@ def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]
         # relate this element to its nearest higher importance
         importance = Importance.NORMAL
         for parent in element.parents:
-            if parent.name in IMPORTANT_TAGS:
-                importance = (
-                    Importance.TITLE
-                    if parent.name == "title"
-                    else Importance.BOLD_OR_HEADING
-                )
+            if parent.name in important_tags:
+                importance = Importance.TITLE if parent.name == "title" else Importance.BOLD_OR_HEADING
                 break
 
         # adjust offset and store start and end of chunk so importance can be assigned to individual tokens
@@ -60,17 +60,20 @@ def tokenize(text: str) -> dict[str, list[int]]:
     if not text:
         return starts
 
-    tokenizer = WordPunctTokenizer()
-    stemmer = PorterStemmer()
-
-    for start, end in tokenizer.span_tokenize(text):
-        raw = text[start:end]
-        if not raw or not raw.isalnum() or not raw.isascii():
+    stemmed_list = []
+    token_idx = 0
+    for token in _tokenizer.tokenize(text):
+        if not token or not token.isalnum() or not token.isascii():
             continue
-        raw = raw.lower()
-        stemmed = stemmer.stem(raw)
-        starts[stemmed].append(start)
+        stemmed = _stemmer.stem(token.lower())
+        starts[stemmed].append(token_idx)
+        stemmed_list.append((stemmed, token_idx))
+        token_idx += 1
 
+    bigrams_list = list(bigrams(stemmed_list))  # ((token, pos1), (token, pos2), (token, pos3)))
+    for bigram in bigrams_list:
+        bi_string = " ".join([t[0] for t in bigram])
+        starts[bi_string].append(bigram[0][1])  # position of first token in bigram
     return starts
 
 

@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from enum import IntEnum
 from typing import TextIO
 
-from lib.globals import FINAL_INDEX_PATH, OFFSET_INDEX_PATH, DOC_NORM_PATH
+from lib.globals import DOC_NORM_PATH, FINAL_INDEX_PATH, OFFSET_INDEX_PATH
 
 
 class Importance(IntEnum):
@@ -119,22 +119,25 @@ class IndexEntry:
 class Index:
     # inverted index: token (str) -> IndexEntry (list of Postings)
     def __init__(self):
-        self.entries: list[IndexEntry] = []
+        self.token_to_entry: dict[str, IndexEntry] = {}
 
     def __len__(self) -> int:
-        return len(self.entries)
+        return len(self.token_to_entry)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Index":
         index = cls()
         for e in d["entries"]:
             entry = IndexEntry.from_dict(e)
-            index.entries.append(entry)
-        index.entries.sort(key=lambda x: x.token)
+            index.token_to_entry[entry.token] = entry
         return index
 
     def insert_entry(self, entry):
-        bisect.insort(self.entries, entry, key=lambda x: x.token)
+        self.token_to_entry[entry.token] = entry
+
+    def get_entry(self, token: str) -> IndexEntry | None:
+        # Return existing IndexEntry for token or empty IndexEntry
+        return self.token_to_entry.get(token)
 
     def add_token(
         self,
@@ -150,52 +153,19 @@ class Index:
             curr_entry = entry
         curr_entry.add_posting(doc_id, start, importance)
 
-    def get_entry(self, token: str) -> IndexEntry | None:
-        # Return existing IndexEntry for token or empty IndexEntry
-        index = bisect.bisect_left(self.entries, token, key=lambda x: x.token)
-        if index < len(self.entries) and self.entries[index].token == token:
-            return self.entries[index]
-        return None
-
     def merge(self, other: "Index") -> None:
         # merge another index into this one
-        for entry in other.entries:
-            existing_entry = self.get_entry(entry.token)
-            if not existing_entry:
-                self.insert_entry(entry)
+        for token in other.token_to_entry:
+            if token not in self.token_to_entry:
+                self.token_to_entry[token] = other.token_to_entry[token]
             else:
-                existing_entry.merge(entry)
+                self.token_to_entry[token].merge(other.token_to_entry[token])
 
     def write_to_disk(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        data = [asdict(e) for e in self.entries]
+        sorted_entries = sorted(self.token_to_entry.values(), key=lambda x: x.token)
         with open(path, "w", encoding="utf-8") as f:
-            for e in data:
-                f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False))
-                f.write("\n")
-
-
-@dataclass
-class IndexStats:
-    num_docs: int
-    num_unique_tokens: int
-    index_size_kb: float
-    exact_dups_removed: int
-    near_dups_removed: int
-
-    def print_and_write(self, path: str) -> None:
-        analytics = (
-            f"Index analytics (for report):\n"
-            f"  Number of indexed documents (after dedup): {self.num_docs}\n"
-            f"  Number of unique tokens:     {self.num_unique_tokens}\n"
-            f"  Total size of index on disk: {self.index_size_kb:.2f} KB\n"
-            f"  Exact duplicates removed:    {self.exact_dups_removed}\n"
-            f"  Near-duplicates removed:     {self.near_dups_removed}\n"
-        )
-        print(analytics)
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(analytics)
+            f.writelines(json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False) + "\n" for entry in sorted_entries)
 
 
 @dataclass(order=False)
@@ -223,8 +193,7 @@ def read_partial_index(path: str) -> Index:
     index = Index()
     for d in data["entries"]:
         entry = IndexEntry.from_dict(d)
-        index.entries.append(entry)
-    index.entries.sort(key=lambda x: x.token)
+        index.token_to_entry[entry.token] = entry
     return index
 
 
@@ -243,7 +212,8 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
 
         heap = []
         offsets = {}
-        doc_vectors: dict[int, float] = defaultdict(float)
+        doc_norms: dict[int, float] = defaultdict(float)
+
         # Seed heap with first lines from each file
         for file in files:
             heap = _push_entry_to_heap(heap, file)
@@ -265,7 +235,7 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
 
                 entry.calculate_df()
                 for posting in entry.doc_postings:
-                    doc_vectors[posting.doc_id] += entry.get_log_tf(posting.doc_id) ** 2
+                    doc_norms[posting.doc_id] += entry.get_log_tf(posting.doc_id) ** 2
                 offsets[token] = out_file.tell()
                 d = asdict(entry)
                 del d["token"]  # token is redundant since it's the key in the index
@@ -274,20 +244,25 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
         with open(OFFSET_INDEX_PATH, "w", encoding="utf-8") as f:
             json.dump(offsets, f, ensure_ascii=False)
         with open(DOC_NORM_PATH, "w", encoding="utf-8") as f:
-            doc_vectors = {doc_id: math.sqrt(norm) for doc_id, norm in doc_vectors.items()}
-            json.dump(doc_vectors, f, ensure_ascii=False)
+            doc_norms = {doc_id: math.sqrt(norm) for doc_id, norm in doc_norms.items()}
+            json.dump(doc_norms, f, ensure_ascii=False)
 
 
 def build_offsets() -> dict[str, int]:
+    print("Loading offsets...")
     offsets = {}
     with open(OFFSET_INDEX_PATH, "r", encoding="utf-8") as offset_file:
         for line in offset_file:
             offsets.update(json.loads(line))
+    print("Offsets loaded.\n")
     return offsets
 
+
 def build_norms() -> dict[int, float]:
+    print("Loading document norms...")
     with open(DOC_NORM_PATH, "r", encoding="utf-8") as norm_file:
         data = json.load(norm_file)
+    print("Document norms loaded.\n")
     return {int(k): v for k, v in data.items()}
 
 

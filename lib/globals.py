@@ -15,4 +15,4 @@ DOC_MAPPING_PATH = os.path.join(FINAL_INDEX_DIR, "doc_mapping.json")
 DOC_NORM_PATH = os.path.join(FINAL_INDEX_DIR, "doc_norms.jsonl")
 # Other constants
 BATCH_SIZE = 5000
-RETURN_SIZE = 100
+RETURN_SIZE = 15
