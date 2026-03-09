@@ -6,8 +6,8 @@ NUM_BITS = 64
 NUM_BLOCKS = HAMMING_K + 1
 # Directories
 DATASET_DIR = "developer"
-PARTIAL_INDEX_DIR = os.path.join("index2", "partials")
-FINAL_INDEX_DIR = os.path.join("index2", "final")
+PARTIAL_INDEX_DIR = os.path.join("index", "partials")
+FINAL_INDEX_DIR = os.path.join("index", "final")
 # File paths
 OFFSET_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "offsets.json")
 FINAL_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "final_index.jsonl")
