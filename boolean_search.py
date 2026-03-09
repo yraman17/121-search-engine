@@ -28,10 +28,12 @@ def query_parser(query: str) -> list[tuple[int, float]]:
                     if doc_id not in results or score > results[doc_id]:
                         results[doc_id] = score
 
-    if len(results) < RETURN_SIZE:
-        for doc_id, score in vector_search(counts):
+    min_tokens_in_doc = max(1, query_len - 1)  # require at least query_len-1 tokens in doc for vector search
+    while len(results) < RETURN_SIZE and min_tokens_in_doc > 0:
+        for doc_id, score in vector_search(counts, min_tokens_in_doc):
             if doc_id not in results:
                 results[doc_id] = score
+        min_tokens_in_doc -= 1
 
     return heapq.nlargest(RETURN_SIZE, results.items(), key=lambda x: x[1])
 
