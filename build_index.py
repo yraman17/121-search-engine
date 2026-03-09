@@ -1,7 +1,7 @@
 import os
 import sys
 
-from lib.common import write_doc_mapping
+from lib.common import read_doc_mapping, write_doc_mapping
 from lib.doc_loading import iter_documents
 from lib.duplicate_detector import DuplicateDetector
 from lib.globals import BATCH_SIZE, DATASET_DIR, FINAL_INDEX_DIR, PARTIAL_INDEX_DIR
@@ -48,6 +48,7 @@ def build_index(
 ) -> None:
     # Make directories if they don't exist
     os.makedirs(final_dir, exist_ok=True)
+    os.makedirs(partial_dir, exist_ok=True)
 
     print("[1/5] Starting index construction...")
     print(f"\tDataset directory: {dataset_dir}")
@@ -110,15 +111,17 @@ def build_index(
     if current_index:
         _offload_partial_index(current_index, partial_dir, partial_paths, next_doc_id)
 
-    # merge all partial indexes into final index
-    print(f"[3/5] Merging {len(partial_paths)} partial index(es) into final index...")
-    print("\tNo partial indexes to merge (empty corpus)") if not partial_paths else print("\tReading and merging partial indexes...")
-    merge_partial_indexes(partial_paths)
-
     # persist doc_id -> URL mapping for report and future search
     print(f"[4/5] Writing document mapping ({len(doc_id_to_url)} documents)...")
     write_doc_mapping(doc_id_to_url)
     print("\tDocument mapping saved to disk\n")
+
+    # merge all partial indexes into final index
+    print(f"[3/5] Merging {len(partial_paths)} partial index(es) into final index...")
+    print("\tNo partial indexes to merge (empty corpus)") if not partial_paths else print("\tReading and merging partial indexes...")
+    doc_mapping = read_doc_mapping()
+    merge_partial_indexes(partial_paths, len(doc_mapping))
+
 
 def main(arg) -> None:
     if arg:

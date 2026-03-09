@@ -5,15 +5,15 @@ import time
 from collections import defaultdict
 
 from lib.common import read_doc_mapping
-from lib.globals import MAX_DF, RETURN_SIZE
-from lib.index import build_norms, build_offsets, fetch_from_index
+from lib.globals import MIN_IDF, RETURN_SIZE
+from lib.index import Index, build_norms, build_offsets, fetch_from_index
 from lib.parse_text import tokenize
-
 
 OFFSETS = build_offsets()
 DOC_MAPPING = read_doc_mapping()
 NUM_DOCS = len(DOC_MAPPING)
 DOC_NORMS = build_norms()
+
 
 def query_parser(query: str) -> list[tuple[int, float]]:
     tokens = tokenize(query)
@@ -35,6 +35,7 @@ def query_parser(query: str) -> list[tuple[int, float]]:
 
     return heapq.nlargest(RETURN_SIZE, results.items(), key=lambda x: x[1])
 
+
 def exact_search(exact_string: str) -> list[tuple[int, float]]:
     entry = fetch_from_index(exact_string, OFFSETS)
     if not entry.doc_postings:
@@ -42,20 +43,33 @@ def exact_search(exact_string: str) -> list[tuple[int, float]]:
     return [(posting.doc_id, entry.get_log_tf(posting.doc_id)) for posting in entry.doc_postings]
 
 
-def vector_search(tokens: dict[str, int]) -> list[tuple[int, float]]:
+def vector_search(tokens: dict[str, int], min_tokens_in_doc: int = 1) -> list[tuple[int, float]]:
     squared_query_norm = 0
     scores: dict[int, float] = defaultdict(float)
-    for token, count in tokens.items():
+    query_index = Index()
+
+    # only proceed with docs that have at least min_tokens_in_doc query tokens to avoid scoring all docs with low token overlap
+    doc_token_counts: dict[int, int] = defaultdict(int)
+    for token in tokens:
         entry = fetch_from_index(token, OFFSETS)
-        if not entry.doc_postings or entry.df >= MAX_DF:
+        if not entry or entry.doc_postings or entry.idf <= MIN_IDF:
+            continue
+        query_index.add_entry(entry)
+        for posting in entry.doc_postings:
+            doc_token_counts[posting.doc_id] += 1
+
+    valid_doc_ids = {doc_id for doc_id, count in doc_token_counts.items() if count >= min_tokens_in_doc}
+    for token, count in tokens.items():
+        entry = query_index.get_entry(token)
+        if not entry or entry.doc_postings or entry.idf <= MIN_IDF:
             continue
 
-        token_idf = math.log10(NUM_DOCS / entry.df) if entry.df else 0
-        query_weight = (1 + math.log10(count)) * token_idf if count else 0
+        print(token, count, entry.idf)
+        query_weight = (1 + math.log10(count)) * entry.idf if count else 0
         squared_query_norm += query_weight**2
 
-        for posting in entry.doc_postings:
-            scores[posting.doc_id] += entry.get_log_tf(posting.doc_id) * query_weight
+        for doc_id in valid_doc_ids:
+            scores[doc_id] += entry.get_log_tf(doc_id) * query_weight
 
     query_norm = math.sqrt(squared_query_norm)
     for doc_id in scores:

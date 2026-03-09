@@ -61,13 +61,13 @@ class IndexEntry:
     # inverted index entry: one token -> list of postings (sorted by doc_id)
     token: str
     doc_postings: list[DocPosting] = field(default_factory=list)
-    df: int = 0
+    idf: float = 0
 
     @classmethod
     def from_dict(cls, d: dict) -> "IndexEntry":
         entry = cls(token=d["token"])
         entry.doc_postings = [DocPosting.from_dict(p) for p in d["doc_postings"]]
-        entry.df = d["df"]
+        entry.idf = d["idf"]
         return entry
 
     def get_posting(self, doc_id: int) -> DocPosting | None:
@@ -92,9 +92,9 @@ class IndexEntry:
             for start, importance in p.positions:
                 self.add_posting(p.doc_id, start, importance)
 
-    def calculate_df(self) -> None:
+    def calculate_idf(self, num_docs) -> None:
         unique_doc_ids = {p.doc_id for p in self.doc_postings}
-        self.df = len(unique_doc_ids)
+        self.idf = math.log10(num_docs / len(unique_doc_ids)) if unique_doc_ids else 0 / 0
 
     def get_tf(self, doc_id: int) -> float:
         i = bisect.bisect_left(self.doc_postings, doc_id, key=lambda x: x.doc_id)
@@ -108,12 +108,11 @@ class IndexEntry:
         tf = self.get_tf(doc_id)
         return 1 + math.log10(tf) if tf else 0
 
-    def get_tf_idf(self, doc_id: int, num_docs: int) -> float:
+    def get_tf_idf(self, doc_id: int) -> float:
         log_tf = self.get_log_tf(doc_id)
         if log_tf == 0:
             return 0
-        idf = math.log10(float(num_docs) / self.df)
-        return log_tf * idf
+        return log_tf * self.idf
 
 
 class Index:
@@ -132,7 +131,7 @@ class Index:
             index.token_to_entry[entry.token] = entry
         return index
 
-    def insert_entry(self, entry):
+    def add_entry(self, entry):
         self.token_to_entry[entry.token] = entry
 
     def get_entry(self, token: str) -> IndexEntry | None:
@@ -149,7 +148,7 @@ class Index:
         curr_entry = self.get_entry(token)
         if not curr_entry:
             entry = IndexEntry(token=token)
-            self.insert_entry(entry)
+            self.add_entry(entry)
             curr_entry = entry
         curr_entry.add_posting(doc_id, start, importance)
 
@@ -165,7 +164,9 @@ class Index:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         sorted_entries = sorted(self.token_to_entry.values(), key=lambda x: x.token)
         with open(path, "w", encoding="utf-8") as f:
-            f.writelines(json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False) + "\n" for entry in sorted_entries)
+            f.writelines(
+                json.dumps(asdict(entry), separators=(",", ":"), ensure_ascii=False) + "\n" for entry in sorted_entries
+            )
 
 
 @dataclass(order=False)
@@ -205,7 +206,7 @@ def _push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
     return heap
 
 
-def merge_partial_indexes(partial_paths: list[str]) -> None:
+def merge_partial_indexes(partial_paths: list[str], num_docs: int) -> None:
     with ExitStack() as stack:
         # Open all partial index files at once
         files = [stack.enter_context(open(path, "r", encoding="utf-8")) for path in partial_paths]
@@ -233,7 +234,7 @@ def merge_partial_indexes(partial_paths: list[str]) -> None:
                     entry.merge(next_entry)
                     heap = _push_entry_to_heap(heap, same_file)
 
-                entry.calculate_df()
+                entry.calculate_idf(num_docs)
                 for posting in entry.doc_postings:
                     doc_norms[posting.doc_id] += entry.get_log_tf(posting.doc_id) ** 2
                 offsets[token] = out_file.tell()
