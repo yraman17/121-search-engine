@@ -1,13 +1,15 @@
 import bisect
-import json
-import os
-from dataclasses import dataclass, field, asdict
-from enum import IntEnum
-from contextlib import ExitStack
 import heapq
+import json
+import math
+import os
+from collections import defaultdict
+from contextlib import ExitStack
+from dataclasses import asdict, dataclass, field
+from enum import IntEnum
 from typing import TextIO
 
-from lib.globals import FINAL_INDEX_PATH, OFFSET_INDEX_PATH
+from lib.globals import FINAL_INDEX_PATH, OFFSET_INDEX_PATH, DOC_NORM_PATH
 
 
 class Importance(IntEnum):
@@ -32,6 +34,7 @@ class Posting:
             importance=Importance(d.get("importance", Importance.NORMAL)),
         )
 
+
 @dataclass
 class DocPosting:
     doc_id: int
@@ -43,11 +46,11 @@ class DocPosting:
             doc_id=d["doc_id"],
             positions=[(p[0], Importance(p[1])) for p in d["positions"]],
         )
-    
+
     def add_position(self, start: int, importance: Importance) -> None:
         index = bisect.bisect_left(self.positions, (start, importance))
         self.positions.insert(index, (start, importance))
-    
+
     def add_positions(self, other: "DocPosting") -> None:
         for pos in other.positions:
             self.add_position(*pos)
@@ -66,7 +69,7 @@ class IndexEntry:
         entry.doc_postings = [DocPosting.from_dict(p) for p in d["doc_postings"]]
         entry.df = d["df"]
         return entry
-    
+
     def get_posting(self, doc_id: int) -> DocPosting | None:
         # binary search for posting with given doc_id
         i = bisect.bisect_left(self.doc_postings, doc_id, key=lambda x: x.doc_id)
@@ -82,7 +85,6 @@ class IndexEntry:
             new_posting = DocPosting(doc_id=doc_id, positions=[(start, importance)])
             index = bisect.bisect_left(self.doc_postings, doc_id, key=lambda x: x.doc_id)
             self.doc_postings.insert(index, new_posting)
-            
 
     def merge(self, other: "IndexEntry") -> None:
         # merge postings from another IndexEntry
@@ -101,6 +103,17 @@ class IndexEntry:
             for _, importance in self.doc_postings[i].positions:
                 tf += 1 + importance * 0.5
         return tf
+
+    def get_log_tf(self, doc_id: int) -> float:
+        tf = self.get_tf(doc_id)
+        return 1 + math.log10(tf) if tf else 0
+
+    def get_tf_idf(self, doc_id: int, num_docs: int) -> float:
+        log_tf = self.get_log_tf(doc_id)
+        if log_tf == 0:
+            return 0
+        idf = math.log10(float(num_docs) / self.df)
+        return log_tf * idf
 
 
 class Index:
@@ -143,7 +156,7 @@ class Index:
         if index < len(self.entries) and self.entries[index].token == token:
             return self.entries[index]
         return None
-    
+
     def merge(self, other: "Index") -> None:
         # merge another index into this one
         for entry in other.entries:
@@ -200,6 +213,9 @@ class HeapEntry:
     def __eq__(self, other):
         return self.token == other.token
 
+    def __hash__(self):
+        return hash(self.token)
+
 
 def read_partial_index(path: str) -> Index:
     with open(path, "r", encoding="utf-8") as f:
@@ -212,7 +228,7 @@ def read_partial_index(path: str) -> Index:
     return index
 
 
-def push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
+def _push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
     line = file.readline()
     if line:
         entry = IndexEntry.from_dict(json.loads(line))
@@ -223,57 +239,62 @@ def push_entry_to_heap(heap: list[HeapEntry], file: TextIO) -> list[HeapEntry]:
 def merge_partial_indexes(partial_paths: list[str]) -> None:
     with ExitStack() as stack:
         # Open all partial index files at once
-        files = [
-            stack.enter_context(open(path, "r", encoding="utf-8"))
-            for path in partial_paths
-        ]
+        files = [stack.enter_context(open(path, "r", encoding="utf-8")) for path in partial_paths]
 
         heap = []
         offsets = {}
+        doc_vectors: dict[int, float] = defaultdict(float)
         # Seed heap with first lines from each file
         for file in files:
-            heap = push_entry_to_heap(heap, file)
+            heap = _push_entry_to_heap(heap, file)
 
-        out_file = open(FINAL_INDEX_PATH, "w", encoding="utf-8")
+        with open(FINAL_INDEX_PATH, "w", encoding="utf-8") as out_file:
+            while heap:
+                # fetch top element and push the next one from the same file
+                heap_entry = heapq.heappop(heap)
+                token, entry, file = heap_entry.token, heap_entry.entry, heap_entry.file
+                heap = _push_entry_to_heap(heap, file)
 
-        while heap:
-            # fetch top element and push the next one from the same file
-            heap_entry = heapq.heappop(heap)
-            token, entry, file = heap_entry.token, heap_entry.entry, heap_entry.file
-            heap = push_entry_to_heap(heap, file)
+                # fetch and merge all the elements in heap that match the token popped initially
+                # - Every time we pop, we push the next entry in that file to the heap to keep growing the heap
+                while heap and heap[0].token == token:
+                    next_heap_entry = heapq.heappop(heap)
+                    next_entry, same_file = next_heap_entry.entry, next_heap_entry.file
+                    entry.merge(next_entry)
+                    heap = _push_entry_to_heap(heap, same_file)
 
-            # fetch and merge all the elements in heap that match the token popped initially
-            # - Every time we pop, we push the next entry in that file to the heap to keep growing the heap
-            while heap and heap[0].token == token:
-                next_heap_entry = heapq.heappop(heap)
-                next_entry, same_file = next_heap_entry.entry, next_heap_entry.file
-                entry.merge(next_entry)
-                heap = push_entry_to_heap(heap, same_file)
+                entry.calculate_df()
+                for posting in entry.doc_postings:
+                    doc_vectors[posting.doc_id] += entry.get_log_tf(posting.doc_id) ** 2
+                offsets[token] = out_file.tell()
+                d = asdict(entry)
+                del d["token"]  # token is redundant since it's the key in the index
+                out_file.write(json.dumps(asdict(entry), ensure_ascii=False) + "\n")
 
-            entry.calculate_df()
-            offsets[token] = out_file.tell()
-            d = asdict(entry)
-            del d["token"]  # token is redundant since it's the key in the index
-            # for p in d["postings"]:
-            #     if p["importance"] == 0:
-            #         del p["importance"]  # don't store importance if it's the default value
-            out_file.write(json.dumps(asdict(entry), ensure_ascii=False) + "\n")
-
-        if out_file:
-            out_file.close()
-            
         with open(OFFSET_INDEX_PATH, "w", encoding="utf-8") as f:
             json.dump(offsets, f, ensure_ascii=False)
+        with open(DOC_NORM_PATH, "w", encoding="utf-8") as f:
+            doc_vectors = {doc_id: math.sqrt(norm) for doc_id, norm in doc_vectors.items()}
+            json.dump(doc_vectors, f, ensure_ascii=False)
 
 
-def write_doc_mapping(doc_id_to_url: dict[int, str], path: str) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    data = {str(k): v for k, v in doc_id_to_url.items()}
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
+def build_offsets() -> dict[str, int]:
+    offsets = {}
+    with open(OFFSET_INDEX_PATH, "r", encoding="utf-8") as offset_file:
+        for line in offset_file:
+            offsets.update(json.loads(line))
+    return offsets
 
-
-def read_doc_mapping(path: str) -> dict[int, str]:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+def build_norms() -> dict[int, float]:
+    with open(DOC_NORM_PATH, "r", encoding="utf-8") as norm_file:
+        data = json.load(norm_file)
     return {int(k): v for k, v in data.items()}
+
+
+def fetch_from_index(token, offsets: dict[str, int]) -> IndexEntry:
+    offset = offsets.get(token)
+    if offset is None:
+        return IndexEntry(token)
+    with open(FINAL_INDEX_PATH, "r", encoding="utf-8") as file:
+        file.seek(offset)
+        return IndexEntry.from_dict(json.loads(file.readline()))

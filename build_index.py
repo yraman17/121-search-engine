@@ -1,19 +1,20 @@
 import os
 
+from lib.common import write_doc_mapping
 from lib.doc_loading import iter_documents
-from lib.globals import DATASET_DIR, PARTIAL_INDEX_DIR, FINAL_INDEX_DIR, BATCH_SIZE
-from lib.parse_text import extract_text, tokenize, assign_importance
+from lib.duplicate_detector import DuplicateDetector
+from lib.globals import BATCH_SIZE, DATASET_DIR, FINAL_INDEX_DIR, PARTIAL_INDEX_DIR
 from lib.index import (
     Index,
-    Importance,
-    IndexStats,
     merge_partial_indexes,
-    write_doc_mapping,
 )
-from lib.duplicate_detector import DuplicateDetector
+from lib.parse_text import assign_importance, extract_text, tokenize
+from lib.vector import build_vector_index
+
 
 def _get_file_size_kb(path: str) -> float:
     return os.path.getsize(path) / 1024.0
+
 
 def _print_progress(file_count, doc_count, exact_dups, near_dups, unique_tokens):
     if file_count % 1000 == 0:
@@ -23,8 +24,8 @@ def _print_progress(file_count, doc_count, exact_dups, near_dups, unique_tokens)
         )
 
 
-def _offload_partial_index(index: Index, dir: str, paths: list[str], doc_id: int):
-    part_path = os.path.join(dir, f"partial_{len(paths)}.jsonl")
+def _offload_partial_index(index: Index, directory: str, paths: list[str], doc_id: int):
+    part_path = os.path.join(directory, f"partial_{len(paths)}.jsonl")
     total_postings = sum(len(entry.doc_postings) for entry in index.entries)
     print(f"      Writing partial index #{len(paths)}:")
     print(f"         - {len(index)} unique tokens")
@@ -79,14 +80,9 @@ def build_index(
         )
         # partial index offload (runs for every file, keyed on file_count)
         if file_count % BATCH_SIZE == 0 and current_index:
-            _offload_partial_index(
-                current_index, partial_dir, partial_paths, next_doc_id
-            )
+            _offload_partial_index(current_index, partial_dir, partial_paths, next_doc_id)
             current_index = Index()
         # text extraction and tokenization
-        # normal_text, important_text = extract_text(html)
-        # counts_normal, _ = tokenize(normal_text)
-        # counts_important, _ = tokenize(important_text)
         full_text, spans = extract_text(html)
         starts = tokenize(full_text)
         token_importance = assign_importance(starts, spans)
@@ -114,47 +110,15 @@ def build_index(
     if current_index:
         _offload_partial_index(current_index, partial_dir, partial_paths, next_doc_id)
 
-    # prints completed processing stats
-    print(
-        f"\tCompleted processing {file_count} files ({next_doc_id} indexed, "
-        f"{exact_dups_removed} exact duplicates, {near_dups_removed} near duplicates skipped)"
-    )
-
     # merge all partial indexes into final index
     print(f"[3/5] Merging {len(partial_paths)} partial index(es) into final index...")
-    # final_index_path = os.path.join(final_dir, "index.json")
-    if not partial_paths:
-        print("\tNo partial indexes to merge (empty corpus)")
-        num_unique_tokens = 0
-    else:
-        # prints merging partial indexes
-        print("\tReading and merging partial indexes...")
-    for i, part_path in enumerate(partial_paths):
-        part_size_kb = _get_file_size_kb(part_path)
-        print(
-            f"\t\t[{i + 1}/{len(partial_paths)}] Merging {part_path} ({part_size_kb:.2f} KB)"
-        )
-
+    print("\tNo partial indexes to merge (empty corpus)") if not partial_paths else print("\tReading and merging partial indexes...")
     merge_partial_indexes(partial_paths)
 
     # persist doc_id -> URL mapping for report and future search
     print(f"[4/5] Writing document mapping ({len(doc_id_to_url)} documents)...")
-    doc_mapping_path = os.path.join(final_dir, "doc_mapping.json")
-    write_doc_mapping(doc_id_to_url, doc_mapping_path)
-    print(f"\tDocument mapping saved to {doc_mapping_path}\n")
-
-    # analytics: index size on disk (final index file + doc mapping, or just index per spec)
-    # print("[5/5] Computing analytics...")
-    # index_size_kb = _get_file_size_kb(final_index_path)
-
-    # return IndexStats(
-    #     num_docs=next_doc_id,
-    #     num_unique_tokens=num_unique_tokens,
-    #     index_size_kb=0,
-    #     exact_dups_removed=exact_dups_removed,
-    #     near_dups_removed=near_dups_removed,
-    # )
-
+    write_doc_mapping(doc_id_to_url)
+    print("\tDocument mapping saved to disk\n")
 
 def main() -> None:
 

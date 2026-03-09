@@ -12,5 +12,7 @@ FINAL_INDEX_DIR = os.path.join("index", "final")
 OFFSET_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "offsets.json")
 FINAL_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "final_index.jsonl")
 DOC_MAPPING_PATH = os.path.join(FINAL_INDEX_DIR, "doc_mapping.json")
+DOC_NORM_PATH = os.path.join(FINAL_INDEX_DIR, "doc_norms.jsonl")
 # Other constants
 BATCH_SIZE = 5000
+RETURN_SIZE = 100

@@ -1,4 +1,5 @@
 import hashlib
+
 from lib.globals import HAMMING_K, NUM_BITS
 
 
@@ -7,12 +8,12 @@ def compute_simhash(token_counts: dict[str, int], num_bits: int = 64) -> int:
     for term, weight in token_counts.items():
         if weight <= 0:
             continue
-        hash = int.from_bytes(
-            hashlib.md5(term.encode("utf-8", errors="ignore")).digest()[:8],
+        hashed = int.from_bytes(
+            hashlib.sha256(term.encode("utf-8", errors="ignore")).digest()[:8],
             byteorder="big",
         )
         for i in range(num_bits):
-            if (hash >> i) & 1:
+            if (hashed >> i) & 1:
                 bit_sums[i] += weight
             else:
                 bit_sums[i] -= weight
