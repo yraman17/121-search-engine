@@ -18,12 +18,8 @@ INDEX_FILE = open(FINAL_INDEX_PATH, "r", encoding="utf-8")  # noqa: SIM115
 
 
 @lru_cache(maxsize=1024)
-def _fetch_from_entry_cached(token, query_mode=True) -> IndexEntry:
-    t0 = time.perf_counter()
+def _fetch_from_entry_cached(token, query_mode=False) -> IndexEntry:
     entry = fetch_from_index(token, query_mode, TOKEN_INFO, INDEX_FILE)
-    t1 = time.perf_counter()
-    len_positions = sum(len(posting.positions) for posting in entry.doc_postings.values()) if entry and entry.doc_postings else 0
-    print(f"fetch {token}: {(t1 - t0) * 1000:.1f}ms, postings: {len(entry.doc_postings) if entry else 0}, positions: {len_positions}")
     if entry and entry.doc_postings:
         return entry
     return IndexEntry(token)  # return empty entry for tokens not found or with no postings to avoid repeated lookups
@@ -49,7 +45,6 @@ def query_parser(query: str) -> list[tuple[int, float]]:
     query_norm = 0.0
     for token, count in counts.items():
         if token in TOKEN_INFO and TOKEN_INFO[token][1] < MIN_IDF:
-            print(f"Skipping token '{token}' with low IDF {TOKEN_INFO[token][1]:.4f}")
             continue
         entry = _fetch_from_entry_cached(token)
         if not entry or not entry.doc_postings:

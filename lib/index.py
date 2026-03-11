@@ -40,7 +40,7 @@ class DocPosting:
         )
 
     def to_dict(self) -> dict:
-        return {"doc_id": self.doc_id, "positions": [[p[0], int(p[1])] for p in self.positions], "log_tf": self.log_tf}
+        return {"doc_id": self.doc_id, "positions": [[p[0], int(p[1])] for p in self.positions], "log_tf": round(self.log_tf, 4)}
 
     def add_position(self, start: int, importance: Importance) -> None:
         index = bisect.bisect_left(self.positions, (start, importance))
@@ -70,7 +70,7 @@ class IndexEntry:
         return {
             "token": self.token,
             "doc_postings": [posting.to_dict() for posting in self.doc_postings.values()],
-            "idf": self.idf,
+            "idf": round(self.idf, 4),
         }
 
     def get_posting(self, doc_id: int) -> DocPosting | None:
@@ -231,10 +231,10 @@ def merge_partial_indexes(partial_paths: list[str], num_docs: int) -> None:
                 for doc_id in entry.doc_postings:
                     entry.calculate_log_tf(doc_id)
                     doc_norms[doc_id] += entry.doc_postings[doc_id].log_tf ** 2
-                offsets[token] = (out_file.tell(), entry.idf)
+                offsets[token] = (out_file.tell(), round(entry.idf, 4))
                 d = entry.to_dict()
                 del d["token"]  # token is redundant since it's the key in the index
-                out_file.write(json.dumps(d, ensure_ascii=False) + "\n")
+                out_file.write(json.dumps(d, separators=(",", ":"), ensure_ascii=False) + "\n")
 
         with open(TOKEN_INFO_PATH, "w", encoding="utf-8") as f:
             json.dump(offsets, f, ensure_ascii=False)
