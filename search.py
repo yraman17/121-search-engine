@@ -65,7 +65,7 @@ def query_parser(query: str) -> list[tuple[int, float]]:
     }
 
     # Iterate in reverse from query_len to 1, getting docs with at least that many query tokens and adding to results until we have enough results
-    min_tokens_in_doc = max(1, query_len - 1)
+    min_tokens_in_doc = max(1, *valid_doc_counts.keys())  # start with max tokens in doc, but at least 1
     while len(results) < RETURN_SIZE and min_tokens_in_doc > 0:
         valid_doc_ids = valid_doc_counts.get(min_tokens_in_doc, set())
         for doc_id, score in vector_search(query_entry_weights, query_norm, entries, valid_doc_ids):
