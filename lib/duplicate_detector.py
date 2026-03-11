@@ -2,16 +2,19 @@ import hashlib
 
 from lib.globals import HAMMING_K, NUM_BITS
 
+_hash_cache = {}  # cache for content hashes to avoid redundant hashing
 
 def compute_simhash(token_counts: dict[str, int], num_bits: int = 64) -> int:
     bit_sums = [0] * num_bits
     for term, weight in token_counts.items():
         if weight <= 0:
             continue
-        hashed = int.from_bytes(
-            hashlib.sha256(term.encode("utf-8", errors="ignore")).digest()[:8],
-            byteorder="big",
-        )
+        if term not in _hash_cache:
+            _hash_cache[term] = int.from_bytes(
+                hashlib.sha256(term.encode("utf-8", errors="ignore")).digest()[:8],
+                byteorder="big",
+            )
+        hashed = _hash_cache[term]
         for i in range(num_bits):
             if (hashed >> i) & 1:
                 bit_sums[i] += weight
@@ -24,14 +27,8 @@ def compute_simhash(token_counts: dict[str, int], num_bits: int = 64) -> int:
     return fingerprint
 
 
-def hamming_distance(a: int, b: int, bits: int = 64) -> int:
-    x = a ^ b
-    n = 0
-    while x and bits > 0:
-        n += x & 1
-        x >>= 1
-        bits -= 1
-    return n
+def hamming_distance(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
 
 
 def block_values(
@@ -78,7 +75,7 @@ class DuplicateDetector:
             candidates = self._block_indexes[i].get(block_val, [])
             for other_simhash, _ in candidates:
                 if (
-                    hamming_distance(simhash, other_simhash, NUM_BITS)
+                    hamming_distance(simhash, other_simhash)
                     <= self._hamming_k
                 ):
                     return "near", None
