@@ -73,7 +73,7 @@ def tokenize(text: str) -> dict[str, list[int]]:
         stemmed_list.append((stemmed, token_idx))
         token_idx += 1
 
-    bigrams_list = list(bigrams(stemmed_list))  # ((token, pos1), (token, pos2), (token, pos3)))
+    bigrams_list = list(bigrams(stemmed_list))  # (((token1, pos1), (token2, pos2)), ((token2, pos2), (token3, pos3)), ...)
     for bigram in bigrams_list:
         bi_string = " ".join([t[0] for t in bigram])
         starts[bi_string].append(bigram[0][1])  # position of first token in bigram
@@ -94,7 +94,7 @@ def assign_importance(
         idx = bisect.bisect_right(span_starts, pos) - 1
         if idx >= 0:
             start, end, importance = spans[idx]
-            pos_importance[start] = importance if start <= pos <= end else Importance.NORMAL
+            pos_importance[pos] = importance if start <= pos <= end else Importance.NORMAL
         else:
             pos_importance[pos] = Importance.NORMAL
 
