@@ -5,7 +5,7 @@ import math
 import os
 from collections import defaultdict
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TextIO
 
@@ -20,22 +20,6 @@ class Importance(IntEnum):
 
 
 @dataclass
-class Posting:
-    # one posting: token's occurrence in a single document
-    doc_id: int
-    start: int
-    importance: Importance = Importance.NORMAL
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "Posting":
-        return cls(
-            doc_id=d["doc_id"],
-            start=d["start"],
-            importance=Importance(d.get("importance", Importance.NORMAL)),
-        )
-
-
-@dataclass
 class DocPosting:
     doc_id: int
     positions: list[tuple[int, Importance]]  # (start, importance) pairs
@@ -46,6 +30,12 @@ class DocPosting:
             doc_id=d["doc_id"],
             positions=[(p[0], Importance(p[1])) for p in d["positions"]],
         )
+
+    def to_dict(self) -> dict:
+        return {
+            "doc_id": self.doc_id,
+            "positions": [[p[0], int(p[1])] for p in self.positions]
+        }
 
     def add_position(self, start: int, importance: Importance) -> None:
         index = bisect.bisect_left(self.positions, (start, importance))
@@ -74,7 +64,7 @@ class IndexEntry:
     def to_dict(self) -> dict:
         return {
             "token": self.token,
-            "doc_postings": [asdict(posting) for posting in self.doc_postings.values()],
+            "doc_postings": [posting.to_dict() for posting in self.doc_postings.values()],
             "idf": self.idf,
         }
 
