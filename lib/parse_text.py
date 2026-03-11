@@ -15,6 +15,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="bs4")
 
 _tokenizer = WordPunctTokenizer()
 _stemmer = PorterStemmer()
+_stem_cache = {}  # cache for stemmed tokens to avoid redundant stemming
 
 
 def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]]:
@@ -62,10 +63,12 @@ def tokenize(text: str) -> dict[str, list[int]]:
 
     stemmed_list = []
     token_idx = 0
-    for token in _tokenizer.tokenize(text):
+    for token in _tokenizer.tokenize(text.lower()):
         if not token or not token.isalnum() or not token.isascii():
             continue
-        stemmed = _stemmer.stem(token.lower())
+        if token not in _stem_cache:
+            _stem_cache[token] = _stemmer.stem(token)
+        stemmed = _stem_cache[token]
         starts[stemmed].append(token_idx)
         stemmed_list.append((stemmed, token_idx))
         token_idx += 1

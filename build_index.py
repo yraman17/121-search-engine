@@ -118,7 +118,9 @@ def build_index(
 
     # merge all partial indexes into final index
     print(f"[3/5] Merging {len(partial_paths)} partial index(es) into final index...")
-    print("\tNo partial indexes to merge (empty corpus)") if not partial_paths else print("\tReading and merging partial indexes...")
+    print("\tNo partial indexes to merge (empty corpus)") if not partial_paths else print(
+        "\tReading and merging partial indexes..."
+    )
     doc_mapping = read_doc_mapping()
     merge_partial_indexes(partial_paths, len(doc_mapping))
 
@@ -128,7 +130,7 @@ def main(arg) -> None:
         build_index()
     else:
         partial_paths = [os.path.join(PARTIAL_INDEX_DIR, f"partial_{num}.jsonl") for num in range(12)]
-        merge_partial_indexes(partial_paths)
+        merge_partial_indexes(partial_paths, len(read_doc_mapping()))
 
 
 if __name__ == "__main__":
