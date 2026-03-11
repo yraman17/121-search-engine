@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TextIO
 
-from lib.globals import DOC_NORM_PATH, FINAL_INDEX_PATH, OFFSET_INDEX_PATH
+from lib.globals import DOC_NORM_PATH, FINAL_INDEX_PATH, TOKEN_INFO_PATH
 
 
 class Importance(IntEnum):
@@ -23,19 +23,24 @@ class Importance(IntEnum):
 class DocPosting:
     doc_id: int
     positions: list[tuple[int, Importance]]  # (start, importance) pairs
+    log_tf: float = -1
 
     @classmethod
-    def from_dict(cls, d: dict) -> "DocPosting":
+    def from_dict(cls, d: dict, query_mode=False) -> "DocPosting":
+        if not query_mode:
+            return cls(
+                doc_id=d["doc_id"],
+                positions=[(p[0], Importance(p[1])) for p in d["positions"]],
+                log_tf=d.get("log_tf", -1),
+            )
         return cls(
             doc_id=d["doc_id"],
-            positions=[(p[0], Importance(p[1])) for p in d["positions"]],
+            positions=[],
+            log_tf=d.get("log_tf", -1),
         )
 
     def to_dict(self) -> dict:
-        return {
-            "doc_id": self.doc_id,
-            "positions": [[p[0], int(p[1])] for p in self.positions]
-        }
+        return {"doc_id": self.doc_id, "positions": [[p[0], int(p[1])] for p in self.positions], "log_tf": self.log_tf}
 
     def add_position(self, start: int, importance: Importance) -> None:
         index = bisect.bisect_left(self.positions, (start, importance))
@@ -54,10 +59,10 @@ class IndexEntry:
     idf: float = 0
 
     @classmethod
-    def from_dict(cls, d: dict, with_token: bool = True) -> "IndexEntry":
+    def from_dict(cls, d: dict, with_token: bool = True, query_mode=False) -> "IndexEntry":
         token = d["token"] if with_token else ""
         entry = cls(token=token)
-        entry.doc_postings = {p["doc_id"]: DocPosting.from_dict(p) for p in d["doc_postings"]}
+        entry.doc_postings = {p["doc_id"]: DocPosting.from_dict(p, query_mode) for p in d["doc_postings"]}
         entry.idf = d["idf"]
         return entry
 
@@ -85,10 +90,6 @@ class IndexEntry:
             for start, importance in postings.positions:
                 self.add_posting(doc_id, start, importance)
 
-    def calculate_idf(self, num_docs) -> None:
-        unique_doc_ids = set(self.doc_postings.keys())
-        self.idf = math.log10(num_docs / len(unique_doc_ids)) if unique_doc_ids else 0 / 0
-
     def get_tf(self, doc_id: int) -> float:
         posting = self.get_posting(doc_id)
         if not posting:
@@ -98,15 +99,13 @@ class IndexEntry:
             tf += 1 + importance * 0.5
         return tf
 
-    def get_log_tf(self, doc_id: int) -> float:
+    def calculate_log_tf(self, doc_id: int) -> None:
         tf = self.get_tf(doc_id)
-        return 1 + math.log10(tf) if tf else 0
+        self.doc_postings[doc_id].log_tf = 1 + math.log10(tf) if tf else 0
 
-    def get_tf_idf(self, doc_id: int) -> float:
-        log_tf = self.get_log_tf(doc_id)
-        if log_tf == 0:
-            return 0
-        return log_tf * self.idf
+    def calculate_idf(self, num_docs) -> None:
+        unique_doc_ids = set(self.doc_postings.keys())
+        self.idf = math.log10(num_docs / len(unique_doc_ids)) if unique_doc_ids else 0 / 0
 
 
 class Index:
@@ -159,7 +158,8 @@ class Index:
         sorted_entries = sorted(self.token_to_entry.values(), key=lambda x: x.token)
         with open(path, "w", encoding="utf-8") as f:
             f.writelines(
-                json.dumps(entry.to_dict(), separators=(",", ":"), ensure_ascii=False) + "\n" for entry in sorted_entries
+                json.dumps(entry.to_dict(), separators=(",", ":"), ensure_ascii=False) + "\n"
+                for entry in sorted_entries
             )
 
 
@@ -229,27 +229,26 @@ def merge_partial_indexes(partial_paths: list[str], num_docs: int) -> None:
 
                 entry.calculate_idf(num_docs)
                 for doc_id in entry.doc_postings:
-                    doc_norms[doc_id] += entry.get_log_tf(doc_id) ** 2
-                offsets[token] = out_file.tell()
+                    entry.calculate_log_tf(doc_id)
+                    doc_norms[doc_id] += entry.doc_postings[doc_id].log_tf ** 2
+                offsets[token] = (out_file.tell(), entry.idf)
                 d = entry.to_dict()
                 del d["token"]  # token is redundant since it's the key in the index
                 out_file.write(json.dumps(d, ensure_ascii=False) + "\n")
 
-        with open(OFFSET_INDEX_PATH, "w", encoding="utf-8") as f:
+        with open(TOKEN_INFO_PATH, "w", encoding="utf-8") as f:
             json.dump(offsets, f, ensure_ascii=False)
         with open(DOC_NORM_PATH, "w", encoding="utf-8") as f:
             doc_norms = {doc_id: math.sqrt(norm) for doc_id, norm in doc_norms.items()}
             json.dump(doc_norms, f, ensure_ascii=False)
 
 
-def build_offsets() -> dict[str, int]:
-    print("Loading offsets...")
-    offsets = {}
-    with open(OFFSET_INDEX_PATH, "r", encoding="utf-8") as offset_file:
-        for line in offset_file:
-            offsets.update(json.loads(line))
-    print("Offsets loaded.\n")
-    return offsets
+def build_token_info() -> dict[str, tuple[int, float]]:
+    print("Loading token info...")
+    with open(TOKEN_INFO_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    print("Token info loaded.\n")
+    return {token: (v[0], v[1]) for token, v in data.items()}
 
 
 def build_norms() -> dict[int, float]:
@@ -260,12 +259,11 @@ def build_norms() -> dict[int, float]:
     return {int(k): v for k, v in data.items()}
 
 
-def fetch_from_index(token, offsets: dict[str, int]) -> IndexEntry:
-    offset = offsets.get(token)
+def fetch_from_index(token, query_mode, token_info: dict[str, tuple[int, float]], file) -> IndexEntry:
+    offset = token_info[token][0] if token in token_info else None
     if offset is None:
         return IndexEntry(token)
-    with open(FINAL_INDEX_PATH, "r", encoding="utf-8") as file:
-        file.seek(offset)
-        entry = IndexEntry.from_dict(json.loads(file.readline()), with_token=False)
+    file.seek(offset)
+    entry = IndexEntry.from_dict(json.loads(file.readline()), with_token=False, query_mode=query_mode)
     entry.token = token
     return entry

@@ -9,11 +9,12 @@ DATASET_DIR = "developer"
 PARTIAL_INDEX_DIR = os.path.join("index", "partials")
 FINAL_INDEX_DIR = os.path.join("index", "final")
 # File paths
-OFFSET_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "offsets.json")
+TOKEN_INFO_PATH = os.path.join(FINAL_INDEX_DIR, "offsets.json")
 FINAL_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "final_index.jsonl")
 DOC_MAPPING_PATH = os.path.join(FINAL_INDEX_DIR, "doc_mapping.json")
 DOC_NORM_PATH = os.path.join(FINAL_INDEX_DIR, "doc_norms.jsonl")
+IDF_PATH = os.path.join(FINAL_INDEX_DIR, "idf.json")
 # Other constants
 BATCH_SIZE = 10000
 RETURN_SIZE = 15
-MIN_IDF = 1.5
+MIN_IDF = 0.5
