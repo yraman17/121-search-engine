@@ -85,20 +85,17 @@ def assign_importance(
 ) -> dict[str, list[tuple[int, Importance]]]:
     # get where each chunk in spans starts
     span_starts = [span[0] for span in spans]
-    # dict tokens to list of starts with importances
-    token_importance = {}
+    pos_importance = {}  # position -> importance for quick lookup
+    all_starts = set()
+    for positions in starts.values():
+        all_starts.update(positions)
 
-    for token, positions in starts.items():
-        token_importance[token] = []
-        for pos in positions:
-            best = Importance.NORMAL
-            # get start after which pos falls (pos between start-end in spans)
-            idx = bisect.bisect_right(span_starts, pos) - 1
-            if idx >= 0:
-                start, end, importance = spans[idx]
-                # make sure pos in found tuple and is more important than current best
-                if start <= pos <= end and importance > best:
-                    best = importance
-            token_importance[token].append((pos, best))
+    for pos in all_starts:
+        idx = bisect.bisect_right(span_starts, pos) - 1
+        if idx >= 0:
+            start, end, importance = spans[idx]
+            pos_importance[start] = importance if start <= pos <= end else Importance.NORMAL
+        else:
+            pos_importance[pos] = Importance.NORMAL
 
-    return token_importance
+    return {token: [(pos, pos_importance[pos]) for pos in positions] for token, positions in starts.items()}
