@@ -16,5 +16,6 @@ DOC_NORM_PATH = os.path.join(FINAL_INDEX_DIR, "doc_norms.jsonl")
 IDF_PATH = os.path.join(FINAL_INDEX_DIR, "idf.json")
 # Other constants
 BATCH_SIZE = 10000
-RETURN_SIZE = 15
-MIN_IDF = 0.5
+RETURN_SIZE = 100
+MIN_IDF = 0.3
+PROXIMITY_WEIGHT = 0.5
