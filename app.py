@@ -1,6 +1,7 @@
 import time
 
-import app as st
+import streamlit as st
+
 from lib.common import read_doc_mapping
 from search import query_parser
 
