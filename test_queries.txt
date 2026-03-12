@@ -1,0 +1,89 @@
+Test Queries Document - Hari Pathanjaly, Yashas Raman, Alan Yuen
+=======================================
+
+Summary of bad Queries:
+----------------------------------------------
+The following queries initially gave poor results (bad rankings and/or bad
+performance):
+
+Poor rankings (irrelevant or overly generic top results):
+  - "web crawler" — top results were intranet login pages, not pages about
+    web crawlers.
+  - "REST API" — "rest" and "api" match broadly; top results were not
+    about REST APIs.
+  - "how to apply to UCI ICS" — results were generic ICS pages instead of
+    a clear admissions page.
+  - "data", "project", "computer", "algorithm" — very broad single-word
+    queries; results are generic (any page with high TF for that term)
+    and hard to rank meaningfully.
+
+Poor performance (slow response, risk of exceeding 300 ms):
+  - "ICS 33" — "33" appears in many docs (page numbers, slides), so a
+    huge posting list is loaded and proximity scoring runs over many docs.
+  - "project" — "project" is ubiquitous; large posting list and scoring
+    cost.
+  - "REST API", "data", "web crawler", "python programming", "computer" —
+    one or both terms have large posting lists, increasing disk reads and
+    scoring time.
+
+What we did in the search engine to make these perform better:
+
+  (1) Bigram indexing — We index and search 2-grams (e.g. "machine
+      learning", "rest api"). Phrase queries and names get better
+      rankings because exact phrase matches are ranked above documents
+      that only contain the words separately.
+
+  (2) Proximity scoring — For multi-term queries we compute the minimum
+      span containing all query terms and boost scores when terms appear
+      close together. This improves ranking for queries like "graduate
+      admission requirements" and "how to apply to UCI ICS" by favoring
+      pages where the intent-bearing terms occur.
+
+  (3) Importance weighting — Terms in titles, headings (h1–h3), and bold
+      get a higher TF weight. Pages that feature the query terms
+      prominently rank higher, which helps both relevance and consistency
+      for broad queries like "computer science".
+
+  (4) MIN_IDF filtering — At query time we skip terms with IDF below 0.3.
+      This avoids letting extremely common terms (e.g. "the", "a") dominate
+      and keeps result sets and scoring cost more manageable.
+
+  (5) Duplicate detection — During indexing we remove exact duplicates
+      (SHA-256) and near-duplicates (SimHash + LSH). Fewer redundant
+      pages in the index improves both relevance and the effective
+      workload per query.
+
+  (6) LRU cache on token lookups — We cache up to 1024 token lookups so
+      repeated terms across queries (or within a multi-term query) do not
+      repeatedly hit disk, improving response time for multi-term and
+      repeated queries.
+
+
+"Good" Queries
+--------------
+
+ 1. "machine learning"                    ~9 ms
+ 2. "information retrieval"              ~1 ms
+ 3. "cristina lopes"                     ~2 ms
+ 4. "alex thornton"                      ~1 ms
+ 5. "software engineering"              ~17 ms
+ 6. "data structures"                    ~9 ms
+ 7. "artificial intelligence research"  ~5 ms
+ 8. "computer vision deep learning"      ~11 ms
+ 9. "database management systems"        ~3 ms
+10. "graduate admission requirements"   ~2 ms
+
+
+"Bad" Queries
+-------------
+
+11. "ICS 33"                 ~235 ms
+12. "project"                 ~229 ms
+13. "REST API"                ~127 ms
+14. "data"                    ~90 ms
+15. "web crawler"             ~91 ms
+16. "how to apply to UCI ICS" ~39 ms
+17. "python programming"      ~84 ms
+18. "algorithm"               ~40 ms
+19. "computer science"        ~41 ms
+20. "computer"                ~231 ms
