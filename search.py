@@ -39,7 +39,7 @@ def query_parser(query: str) -> list[tuple[int, float]]:
         while len(results) < RETURN_SIZE and min_tokens_in_doc > 0:
             valid_doc_ids = valid_doc_counts.get(min_tokens_in_doc, set())
             for doc_id, score in vector_search(query_entry_weights, query_norm, entries, valid_doc_ids):
-                if doc_id not in results:
+                if doc_id not in results or score > results[doc_id]:
                     results[doc_id] = score
             min_tokens_in_doc -= 1
 
