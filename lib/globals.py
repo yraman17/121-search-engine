@@ -13,6 +13,7 @@ TOKEN_INFO_PATH = os.path.join(FINAL_INDEX_DIR, "offsets.json")
 FINAL_INDEX_PATH = os.path.join(FINAL_INDEX_DIR, "final_index.jsonl")
 DOC_MAPPING_PATH = os.path.join(FINAL_INDEX_DIR, "doc_mapping.json")
 DOC_NORM_PATH = os.path.join(FINAL_INDEX_DIR, "doc_norms.jsonl")
+DOC_PAGERANK_PATH = os.path.join(FINAL_INDEX_DIR, "doc_pagerank.json")
 IDF_PATH = os.path.join(FINAL_INDEX_DIR, "idf.json")
 # Other constants
 BATCH_SIZE = 10000

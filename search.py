@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from functools import lru_cache
 
-from lib.common import read_doc_mapping
+from lib.common import read_doc_mapping, read_pagerank
 from lib.globals import FINAL_INDEX_PATH, MIN_IDF, PROXIMITY_WEIGHT, RETURN_SIZE
 from lib.index import IndexEntry, build_norms, build_token_info, fetch_from_index
 from lib.parse_text import tokenize
@@ -14,6 +14,8 @@ TOKEN_INFO = build_token_info()
 DOC_MAPPING = read_doc_mapping()
 NUM_DOCS = len(DOC_MAPPING)
 DOC_NORMS = build_norms()
+PAGERANK_SCORES = read_pagerank()
+PAGERANK_SCALE = max(PAGERANK_SCORES.values()) if PAGERANK_SCORES else 1.0
 INDEX_FILE = open(FINAL_INDEX_PATH, "r", encoding="utf-8")  # noqa: SIM115
 
 
@@ -42,6 +44,14 @@ def query_parser(query: str) -> list[tuple[int, float]]:
                 if doc_id not in results or score > results[doc_id]:
                     results[doc_id] = score
             min_tokens_in_doc -= 1
+
+    # Combine text relevance with PageRank, giving 0.15 weight to PageRank
+    if len(PAGERANK_SCORES) > 0:
+        combined = {}
+        for doc_id, rel_score in results.items():
+            norm_pr = PAGERANK_SCORES.get(doc_id, 0) / PAGERANK_SCALE
+            combined[doc_id] = 0.85 * rel_score + 0.15 * norm_pr
+        results = combined
 
     return heapq.nlargest(RETURN_SIZE, results.items(), key=lambda x: x[1])
 

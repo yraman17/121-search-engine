@@ -1,7 +1,7 @@
 import os
 import sys
 
-from lib.common import read_doc_mapping, write_doc_mapping
+from lib.common import read_doc_mapping, write_doc_mapping, write_pagerank
 from lib.doc_loading import iter_documents
 from lib.duplicate_detector import DuplicateDetector
 from lib.globals import BATCH_SIZE, DATASET_DIR, FINAL_INDEX_DIR, PARTIAL_INDEX_DIR
@@ -9,7 +9,9 @@ from lib.index import (
     Index,
     merge_partial_indexes,
 )
+from lib.links import extract_outlinks, normalize_url
 from lib.parse_text import assign_importance, extract_text, tokenize
+from lib.pagerank import compute_pagerank
 
 
 def _get_file_size_kb(path: str) -> float:
@@ -123,6 +125,24 @@ def build_index(
     )
     doc_mapping = read_doc_mapping()
     merge_partial_indexes(partial_paths, len(doc_mapping))
+
+    # Build link graph and compute PageRank
+    if doc_mapping:
+        print("[5/5] Building link graph and computing PageRank...")
+        url_lookup = {normalize_url(u): did for did, u in doc_mapping.items()}
+        link_graph: dict[int, list[int]] = {}
+        for url, html in iter_documents(dataset_dir):
+            if html is None:
+                continue
+            canon = normalize_url(url)
+            did = url_lookup.get(canon)
+            if did is None:
+                continue
+            link_graph[did] = extract_outlinks(html, url, url_lookup)
+        doc_ids = set(doc_mapping.keys())
+        rank_scores = compute_pagerank(link_graph, doc_ids)
+        write_pagerank(rank_scores)
+        print("\tPageRank scores saved.\n")
 
 
 def main(arg) -> None:
