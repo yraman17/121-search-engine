@@ -40,7 +40,11 @@ class DocPosting:
         )
 
     def to_dict(self) -> dict:
-        return {"doc_id": self.doc_id, "positions": [[p[0], int(p[1])] for p in self.positions], "log_tf": round(self.log_tf, 4)}
+        return {
+            "doc_id": self.doc_id,
+            "positions": [[p[0], int(p[1])] for p in self.positions],
+            "log_tf": round(self.log_tf, 4),
+        }
 
     def add_position(self, start: int, importance: Importance) -> None:
         index = bisect.bisect_left(self.positions, (start, importance))

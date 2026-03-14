@@ -114,12 +114,12 @@ def build_index(
         _offload_partial_index(current_index, partial_dir, partial_paths, next_doc_id)
 
     # persist doc_id -> URL mapping for report and future search
-    print(f"[4/5] Writing document mapping ({len(doc_id_to_url)} documents)...")
+    print(f"[3/5] Writing document mapping ({len(doc_id_to_url)} documents)...")
     write_doc_mapping(doc_id_to_url)
     print("\tDocument mapping saved to disk\n")
 
     # merge all partial indexes into final index
-    print(f"[3/5] Merging {len(partial_paths)} partial index(es) into final index...")
+    print(f"[4/5] Merging {len(partial_paths)} partial index(es) into final index...")
     print("\tNo partial indexes to merge (empty corpus)") if not partial_paths else print(
         "\tReading and merging partial indexes..."
     )

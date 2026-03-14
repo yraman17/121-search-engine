@@ -1,5 +1,6 @@
 import json
 import os
+from urllib.parse import urldefrag
 
 
 def all_jsons_iter(dataset_dir):
@@ -23,8 +24,7 @@ def read_json_file(json_file):
     html = data.get("content")
     if not url:
         return (None, None)
-    url = url.split("#")[0]
-    url = url.strip()
+    url = urldefrag(url)[0].strip()
     return (url, html)
 
 
