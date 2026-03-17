@@ -21,6 +21,7 @@ class Importance(IntEnum):
 
 @dataclass
 class DocPosting:
+    # posting for a single document in the inverted index, contains sorted positions of the token in the document and precomputed log_tf for efficient scoring during search
     doc_id: int
     positions: list[tuple[int, Importance]]  # (start, importance) pairs
     log_tf: float = -1
@@ -57,6 +58,8 @@ class DocPosting:
 
 @dataclass
 class IndexEntry:
+    # maintains dict of doc_id to DocPosting for a token
+    # sorted by doc_id during merge
     # inverted index entry: one token -> list of postings (sorted by doc_id)
     token: str
     doc_postings: dict[int, DocPosting] = field(default_factory=dict)  # doc_id -> DocPosting for quick lookup
@@ -95,6 +98,7 @@ class IndexEntry:
                 self.add_posting(doc_id, start, importance)
 
     def get_tf(self, doc_id: int) -> float:
+        # get exact term frequency for a specific doc_id
         posting = self.get_posting(doc_id)
         if not posting:
             return 0
@@ -104,16 +108,19 @@ class IndexEntry:
         return tf
 
     def calculate_log_tf(self, doc_id: int) -> None:
+        # calculate and set log_tf for a specific doc_id based on term frequency, used for scoring during search
         tf = self.get_tf(doc_id)
         self.doc_postings[doc_id].log_tf = 1 + math.log10(tf) if tf else 0
 
     def calculate_idf(self, num_docs) -> None:
+        # calculate idf for the token based on how many unique documents it appears in, used for scoring during search
         unique_doc_ids = set(self.doc_postings.keys())
         self.idf = math.log10(num_docs / len(unique_doc_ids)) if unique_doc_ids else 0 / 0
 
 
 class Index:
     # inverted index: token (str) -> IndexEntry (list of Postings)
+    # dict sorted by token during merge
     def __init__(self):
         self.token_to_entry: dict[str, IndexEntry] = {}
 
@@ -169,6 +176,7 @@ class Index:
 
 @dataclass(order=False)
 class HeapEntry:
+    # helper class for merging partial indexes using a heap, contains token, corresponding IndexEntry, and file object to read next entry from after popping
     token: str
     entry: IndexEntry
     file: TextIO
@@ -231,6 +239,10 @@ def merge_partial_indexes(partial_paths: list[str], num_docs: int) -> None:
                     entry.merge(next_entry)
                     _push_entry_to_heap(heap, same_file)
 
+                # Calculations to store in index files
+                # - calculate idf for token
+                # - calculate log_tf for each doc_id in the postings and update doc_norms for each doc_id
+                # - store offset and idf
                 entry.calculate_idf(num_docs)
                 for doc_id in entry.doc_postings:
                     entry.calculate_log_tf(doc_id)

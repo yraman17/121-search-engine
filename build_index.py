@@ -10,8 +10,8 @@ from lib.index import (
     merge_partial_indexes,
 )
 from lib.links import extract_outlinks, normalize_url
-from lib.parse_text import assign_importance, extract_text, tokenize
 from lib.pagerank import compute_pagerank
+from lib.parse_text import assign_importance, extract_text, tokenize
 
 
 def _get_file_size_kb(path: str) -> float:
@@ -58,9 +58,9 @@ def build_index(
     print(f"\tFinal index directory: {final_dir}")
     print(f"\tBatch size: {BATCH_SIZE} documents per partial index\n")
 
-    doc_id_to_url: dict[int, str] = {}
-    partial_paths: list[str] = []
-    current_index = Index()
+    doc_id_to_url: dict[int, str] = {} # mapping of doc_id to URL for storing and future search use
+    partial_paths: list[str] = [] # paths of partial index files to merge later
+    current_index = Index() # in-memory index for current batch of documents
     next_doc_id = 0
     file_count = 0
     exact_dups_removed = 0
@@ -68,6 +68,7 @@ def build_index(
     detector = DuplicateDetector()
 
     print("[2/5] Processing documents and building index...")
+    # Main loop that iterates through documents, extracts text, detects duplicates, and builds partial indexes
     for url, html in iter_documents(dataset_dir):
         if html is None:
             continue

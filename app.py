@@ -3,13 +3,13 @@ import time
 import streamlit as st
 
 from lib.common import read_doc_mapping
-from search import query_parser
+from search import INDEX_FILE, query_parser
 
 DOC_MAPPING = read_doc_mapping()
 
 st.set_page_config(page_title="ICS Search Engine", layout="wide")
 
-
+# GUI using Streamlit (Alan)
 def main():
     st.markdown("# ICS Search Engine")
     st.markdown("Search across UCI ICS web pages")
@@ -40,3 +40,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    INDEX_FILE.close()

@@ -4,6 +4,7 @@ from lib.globals import HAMMING_K, NUM_BITS
 
 _hash_cache = {}  # cache for content hashes to avoid redundant hashing
 
+# Alan this is all you?
 def compute_simhash(token_counts: dict[str, int], num_bits: int = 64) -> int:
     bit_sums = [0] * num_bits
     for term, weight in token_counts.items():

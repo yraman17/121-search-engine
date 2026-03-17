@@ -44,6 +44,8 @@ def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]
                 break
 
         # adjust offset and store start and end of chunk so importance can be assigned to individual tokens
+        # ex: <h1>hello world</h1> -> text chunk "hello world" with importance TITLE and span (0, 10, TITLE)
+        # or <p>this is an example </p> -> text chunk "this is an example" with importance NORMAL and span (11, 32, NORMAL) if it comes after the previous chunk
         start = offset
         end = offset + len(text)
         spans.append((start, end, importance))
@@ -55,7 +57,8 @@ def extract_text(html_text: str) -> tuple[str, list[tuple[int, int, Importance]]
 
 
 def tokenize(text: str) -> dict[str, list[int]]:
-    # tokenize text into stemmed terms; return token counts and start positions per term
+    # get bigrams and tokens and their positions, then combine into dict of token -> list of positions
+    # stems and stores in cache to avoid redundant stemming of the same token across documents and queries, which is a bottleneck during search
     starts: defaultdict[str, list[int]] = defaultdict(list)
 
     if not text:
@@ -83,6 +86,7 @@ def tokenize(text: str) -> dict[str, list[int]]:
 def assign_importance(
     starts: dict[str, list[int]], spans: list[tuple[int, int, Importance]]
 ) -> dict[str, list[tuple[int, Importance]]]:
+    # Assigns importance to individual tokens basedo on chunks in spans
     # get where each chunk in spans starts
     span_starts = [span[0] for span in spans]
     pos_importance = {}  # position -> importance for quick lookup
